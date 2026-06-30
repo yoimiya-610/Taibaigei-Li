@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+.env
+
+# Runtime state is deliberately local and ignored from the repository root.
+data/
+logs/
+
+# Temporary files
+*.tmp
+*.bak

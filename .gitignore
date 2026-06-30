@@ -1,0 +1,27 @@
+# Local environment and Python caches
+.env
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime data: may contain QQ IDs, message excerpts, rankings and credentials
+mybot/data/
+mybot/logs/
+backups/
+*.log
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.tmp
+*.bak
+
+# Local bot adapters and their configuration
+napcat/
+lagrange/
