@@ -1,8 +1,10 @@
 # 李太白给
 
-基于 NoneBot2 与 OneBot V11 的中文群聊机器人。机器人代码位于 [`mybot/`](mybot/)，运行数据、日志和备份严格留在部署环境，不进入 Git。
+李太白给是基于 NoneBot2 与 OneBot V11 的中文群聊机器人。公开仓库只保留可分发源码；运行数据、日志、备份和本地环境配置都应留在部署环境，不进入 Git。
 
-## 本地启动
+机器人主体位于 [`mybot/`](mybot/)。如果你拿到的是这个公开仓库副本，建议先阅读 [PUBLIC_RELEASE_MANIFEST.md](PUBLIC_RELEASE_MANIFEST.md) 了解发布包包含和剔除了什么。
+
+## 快速开始
 
 ```powershell
 Copy-Item mybot/.env.example mybot/.env
@@ -11,13 +13,30 @@ uv sync --project mybot
 uv run --project mybot li-taibaigei
 ```
 
-`DAILY_GREET_GROUPS` 为空时会关闭定时早晚安；历史小游戏代码默认关闭，可由管理员在运行时开启。
+也可以使用模块入口：
 
-## 协作方式
+```powershell
+uv run --project mybot python -m mybot.main
+```
 
-- 修改从分支发起，使用 Pull Request 合并到 `main`。
-- 不提交 `.env`、`mybot/data/`、`mybot/logs/`、`backups/` 或本地适配器配置。
-- 提交前运行：
+补充说明：
+
+- `DAILY_GREET_GROUPS` 为空时会关闭定时早晚安。
+- `mybot/data/`、`mybot/logs/` 和根目录 `backups/` 都属于运行产物，不应提交。
+- 历史小游戏源码会随发布包保留，但默认关闭；管理员可在运行时开启。
+
+## 仓库说明
+
+- [mybot/README.md](mybot/README.md)：机器人运行与开发入口说明。
+- [docs/runtime-state-migration.md](docs/runtime-state-migration.md)：旧部署迁移到当前仓库结构时的状态迁移说明。
+- [tools/deploy_server.sh](tools/deploy_server.sh)：服务器拉取更新与重启脚本。
+- [CONTRIBUTING.md](CONTRIBUTING.md) 与 [AGENTS.md](AGENTS.md)：协作、提交和验证规则。
+
+## 开发与提交流程
+
+- 修改应从分支发起，并通过 Pull Request 合并到 `main`。
+- 不提交 `.env`、`mybot/data/`、`mybot/logs/`、`backups/`、数据库文件或本地适配器配置。
+- 提交前至少执行：
 
 ```powershell
 uv run --project mybot python -m compileall mybot/bot.py mybot/main.py mybot/common mybot/plugins mybot/plugins_disabled mybot/tests
@@ -25,21 +44,23 @@ uv run --project mybot python -m unittest discover -s mybot/tests -v
 git diff --check
 ```
 
-详细规则见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [AGENTS.md](AGENTS.md)。
+## 部署更新
 
-已有部署从旧版本升级时，请先阅读 [运行状态迁移说明](docs/runtime-state-migration.md)，避免 Git 删除历史上受跟踪的数据文件。
+已有部署在首次切换到当前仓库结构前，请先阅读 [运行状态迁移说明](docs/runtime-state-migration.md)，避免 Git 删除历史上受跟踪的数据文件。
 
-## 服务器更新
-
-完成一次运行状态迁移后，服务器可使用下面的脚本更新代码：
+完成一次迁移后，可在服务器上执行：
 
 ```bash
 cd ~/qqbot
 bash tools/deploy_server.sh
 ```
 
-脚本会在机器人仍运行时先拉取并校验更新；只有确实有可快进更新时，才短暂停止名为 `nonebot` 的 Screen 会话，更新代码和依赖后立即重新启动。它不会重启或重新登录 NapCat。
+脚本只在检测到可快进更新时，才短暂停止名为 `nonebot` 的 Screen 会话，更新代码和依赖后立即重启；它不会重启或重新登录 NapCat。
 
-可选环境变量：`BOT_BRANCH`（默认 `main`）、`BOT_SCREEN_NAME`（默认 `nonebot`）、`BOT_STOP_TIMEOUT`（默认 `20` 秒）。脚本发现本地代码有未提交修改时会停止执行，避免覆盖人工改动。
+可选环境变量：
 
-不要在日常更新中继续使用旧的 `~/start_bot.sh`，如果它包含 `pkill -f screen`，会终止服务器上所有 Screen 会话，连同 NapCat 一并关闭。`tools/deploy_server.sh` 只操作 `nonebot` 会话，可替代该旧脚本。
+- `BOT_BRANCH`：默认 `main`
+- `BOT_SCREEN_NAME`：默认 `nonebot`
+- `BOT_STOP_TIMEOUT`：默认 `20` 秒
+
+如果旧脚本里包含 `pkill -f screen`，不要继续用于日常更新；那会终止服务器上所有 Screen 会话，连同 NapCat 一并关闭。当前仓库的 `tools/deploy_server.sh` 只操作机器人对应的会话。
