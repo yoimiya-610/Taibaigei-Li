@@ -2,6 +2,8 @@
 
 李太白给是基于 NoneBot2 与 OneBot V11 的中文群聊机器人。公开仓库只保留可分发源码；运行数据、日志、备份和本地环境配置都应留在部署环境，不进入 Git。
 
+当前版本：`v0.1.5`
+
 机器人主体位于 [`mybot/`](mybot/)。如果你拿到的是这个公开仓库副本，建议先阅读 [PUBLIC_RELEASE_MANIFEST.md](PUBLIC_RELEASE_MANIFEST.md) 了解发布包包含和剔除了什么。
 
 ## 快速开始
@@ -27,22 +29,9 @@ uv run --project mybot python -m mybot.main
 
 ## 仓库说明
 
-- [mybot/README.md](mybot/README.md)：机器人运行与开发入口说明。
+- [mybot/README.md](mybot/README.md)：机器人运行说明。
 - [docs/runtime-state-migration.md](docs/runtime-state-migration.md)：旧部署迁移到当前仓库结构时的状态迁移说明。
 - [tools/deploy_server.sh](tools/deploy_server.sh)：服务器拉取更新与重启脚本。
-- [CONTRIBUTING.md](CONTRIBUTING.md) 与 [AGENTS.md](AGENTS.md)：协作、提交和验证规则。
-
-## 开发与提交流程
-
-- 修改应从分支发起，并通过 Pull Request 合并到 `main`。
-- 不提交 `.env`、`mybot/data/`、`mybot/logs/`、`backups/`、数据库文件或本地适配器配置。
-- 提交前至少执行：
-
-```powershell
-uv run --project mybot python -m compileall mybot/bot.py mybot/main.py mybot/common mybot/plugins mybot/plugins_disabled mybot/tests
-uv run --project mybot python -m unittest discover -s mybot/tests -v
-git diff --check
-```
 
 ## 部署更新
 
