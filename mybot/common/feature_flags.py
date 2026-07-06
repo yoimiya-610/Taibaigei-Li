@@ -4,17 +4,18 @@ import sys
 from types import ModuleType
 
 from mybot.common.json_store import load_json, mutate_json
+from mybot.common.legacy_games import LEGACY_GAME_BY_MODULE, LEGACY_GAME_NAMES, LEGACY_GAME_ORDER
 
 
 FEATURE_FLAGS_FILE = Path(__file__).resolve().parent.parent / "data" / "feature_flags.json"
 LEGACY_GAME_OVERRIDES_FILE = Path(__file__).resolve().parent.parent / "data" / "legacy_game_overrides.json"
 PROTECTED_FEATURES = {"admin_console"}
 DISABLED_PLUGIN_FEATURES = {
-    "blackjack": "legacy_blackjack",
-    "dice": "legacy_dice",
-    "race": "legacy_race",
-    "roulette": "legacy_roulette",
-    "slot": "legacy_slot",
+    module_name: game.feature_key
+    for module_name, game in LEGACY_GAME_BY_MODULE.items()
+}
+FEATURE_ALIASES = {
+    "youyimiya": "yoimiya",
 }
 DEFAULT_FEATURE_ENABLED = {
     "legacy_blackjack": False,
@@ -23,13 +24,6 @@ DEFAULT_FEATURE_ENABLED = {
     "legacy_roulette": False,
     "legacy_slot": False,
 }
-LEGACY_GAME_ORDER = (
-    "legacy_slot",
-    "legacy_dice",
-    "legacy_blackjack",
-    "legacy_race",
-    "legacy_roulette",
-)
 LEGACY_GAME_SET = set(LEGACY_GAME_ORDER)
 
 FEATURE_NAMES = {
@@ -45,12 +39,9 @@ FEATURE_NAMES = {
     "gift": "社交互动",
     "hello": "调试命令",
     "help": "帮助菜单",
-    "legacy_blackjack": "纸牌点数",
-    "legacy_dice": "点数方块",
-    "legacy_race": "赛博竞速",
-    "legacy_roulette": "多人转盘",
-    "legacy_slot": "图案转盘",
+    **LEGACY_GAME_NAMES,
     "love": "情感互动",
+    "mini_commands": "彩蛋小令",
     "monthly_fame": "月度风云榜",
     "poem": "诗词文艺",
     "poetry_game": "飞花令",
@@ -60,7 +51,7 @@ FEATURE_NAMES = {
     "rate_limit": "频率限制",
     "riddle": "猜谜",
     "roast_target": "代骂",
-    "youyimiya": "米亚介绍",
+    "yoimiya": "米亚介绍",
 }
 
 
@@ -133,20 +124,33 @@ def get_legacy_game_status(feature: str, now: date | datetime | None = None) -> 
 
 
 def get_feature_name(feature: str) -> str:
+    feature = _canonical_feature(feature)
     return FEATURE_NAMES.get(feature, feature)
 
 
+def _canonical_feature(feature: str) -> str:
+    return FEATURE_ALIASES.get(feature, feature)
+
+
 def is_feature_enabled(feature: str) -> bool:
+    feature = _canonical_feature(feature)
     if feature in PROTECTED_FEATURES:
         return True
     if feature in LEGACY_GAME_SET:
         return get_legacy_game_enabled(feature)
     flags = _load_flags()
+    feature_values = flags.get("features", {})
+    if feature in feature_values:
+        return bool(feature_values[feature])
+    for alias, canonical in FEATURE_ALIASES.items():
+        if canonical == feature and alias in feature_values:
+            return bool(feature_values[alias])
     default = DEFAULT_FEATURE_ENABLED.get(feature, True)
-    return bool(flags.get("features", {}).get(feature, default))
+    return bool(default)
 
 
 def set_feature_enabled(feature: str, enabled: bool) -> None:
+    feature = _canonical_feature(feature)
     if feature in PROTECTED_FEATURES and not enabled:
         raise ValueError("protected_feature")
     if feature in LEGACY_GAME_SET:
@@ -217,6 +221,8 @@ def resolve_feature(identifier: str) -> str | None:
     normalized = identifier.strip().lower()
     if not normalized:
         return None
+    if normalized in FEATURE_ALIASES:
+        return FEATURE_ALIASES[normalized]
 
     for item in collect_features():
         if item["key"].lower() == normalized:

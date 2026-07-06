@@ -18,33 +18,51 @@ async def _render_monthly_fame_message(bot: Bot, group_id: int, result: dict) ->
     awards = result.get("awards", [])
     lines = [
         "🏮 李太白给·月度群风云榜 🏮",
-        "=" * 22,
-        f"（展卷观风）{month} 风云已定，本猫替诸位落榜为证。",
-        "=" * 22,
+        "━━━━━━━━━━━━━━━━━━",
+        f"（抖开长卷）{month} 一月群风至此收束，今夜便在诸君名下排座分云。",
+        "星灯列阵，墨榜高悬，且听本猫唱名。",
+        "━━━━━━━━━━━━━━━━━━",
     ]
 
     if not awards:
         lines.extend(
             [
-                "本月风声尚轻，榜上暂未题名。",
-                "=" * 22,
-                "『江湖不怕一时静，来月风云再上楼。』",
+                "本月风声尚轻，长卷暂未落下惊鸿姓名。",
+                "━━━━━━━━━━━━━━━━━━",
+                "『云旗未展天犹阔，铁马应知后会期。\n"
+                "今夜暂教星斗静，来朝更起万重旗。\n"
+                "江山不负藏锋客，风月终归拔剑时。\n"
+                "待到群峰齐振处，满堂名姓动天池。』",
             ]
         )
         return "\n".join(lines)
 
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    rank_comments = {
+        1: "点评：群星拱北，万象归旌，这一席当真压住满堂风月。",
+        2: "点评：只差半步登峰，气势却已横开云路，来月大可再争魁首。",
+        3: "点评：探花落座亦自生辉，一盏星灯已照出后来万里。",
+    }
     for award in awards:
         rank = int(award.get("rank", 0))
         user_id = str(award.get("user_id") or "")
         nickname = await get_nickname(bot, user_id, context="群风云榜")
-        lines.append(f"{medals.get(rank, f'{rank}.')} {nickname} —— {award.get('title', '')}")
+        gift_icon = award.get("gift_icon", "")
+        gift_name = award.get("gift_name", "")
+        reward_text = f"｜得 {gift_icon} {gift_name}" if gift_name else ""
+        lines.append(f"{medals.get(rank, f'{rank}.')} {nickname} —— {award.get('title', '')}{reward_text}")
+        comment = rank_comments.get(rank)
+        if comment:
+            lines.append(comment)
 
     lines.extend(
         [
-            "=" * 22,
-            "榜上名号已入册，诸君自可择日佩之。",
-            "『一月群风归此榜，几人名姓带星来。』",
+            "━━━━━━━━━━━━━━━━━━",
+            "榜上名号已入册，前三锦礼也已收入背包；今夜掌声至此，来月再听龙吟。",
+            "『金鼓裂空开夜色，旌旗卷月下高城。\n"
+            "三台名姓悬天上，百席风声入酒觥。\n"
+            "一卷评成惊海岳，满堂坐定动雷霆。\n"
+            "莫言今夜云梯尽，明月还看后起旌。』",
         ]
     )
     return "\n".join(lines)

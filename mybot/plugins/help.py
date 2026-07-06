@@ -3,6 +3,7 @@ from nonebot.adapters.onebot.v11 import MessageEvent, Bot
 
 from mybot.common.feature_flags import collect_features, get_legacy_rotation_day_name
 from mybot.common.help_registry import CATEGORY_META, HelpItem, render_category_help, render_help_menu
+from mybot.common.legacy_games import LEGACY_GAMES, LEGACY_GAME_ORDER
 from mybot.common.version import __version__
 
 
@@ -11,20 +12,14 @@ HELP_ITEMS = (
     HelpItem("系统说明", "/关于 - 本猫介绍", 10),
 )
 COMMAND_ALIASES = (
-    "help", "帮助", "菜单", "功能", "命令",
-    "游戏", "游戏列表", "小游戏",
+    "help", "帮助", "菜单", "功能", "命令", "功能菜单", "命令列表", "指令",
+    "游戏", "游戏列表", "小游戏", "游戏大厅", "游戏大全",
     "关于", "about", "介绍",
-    "积分说明", "积分帮助", "怎么赚积分",
+    "积分说明", "积分帮助", "怎么赚积分", "积分规则", "怎么得积分",
     "诗词文艺", "情感互动", "趣味功能", "签到积分", "社交互动", "AI对话", "系统说明",
 )
 
-LEGACY_GAME_KEYS = (
-    "legacy_slot",
-    "legacy_dice",
-    "legacy_blackjack",
-    "legacy_race",
-    "legacy_roulette",
-)
+LEGACY_GAME_KEYS = LEGACY_GAME_ORDER
 
 
 def _legacy_game_statuses() -> dict[str, str]:
@@ -37,41 +32,41 @@ def _legacy_game_statuses() -> dict[str, str]:
 
 def _render_game_list() -> str:
     status = _legacy_game_statuses()
-    return (
-        "🎮 李太白给·游戏大厅 🎮\n"
-        "======================\n"
-        f"（铺开旧局）今日是{get_legacy_rotation_day_name()}，玩法与指令都记在这里：\n"
-        "======================\n"
-        f"\n【图案转盘｜{status['legacy_slot']}】\n"
-        "/图案转盘 金额\n"
-        "转出三个相同图案可获对应倍数奖励，两个樱桃返还1.25倍；单次最多100积分。\n"
-        f"\n【点数方块｜{status['legacy_dice']}】\n"
-        "/点数挑战 开局；/选大 金额；/选小 金额；/选三同 金额；/结算\n"
-        "三枚方块总和11-17为大、4-10为小，猜中大小得1.95倍，猜中三同得34倍；单次最多100积分。\n"
-        f"\n【纸牌点数｜{status['legacy_blackjack']}】\n"
-        "/纸牌挑战 金额；/要牌；/停牌；/弃牌\n"
-        "点数尽量接近21且不可超过，普通胜局得1.95倍，开局21点得2.4倍；单次最多100积分。\n"
-        f"\n【赛博竞速｜{status['legacy_race']}】\n"
-        "/竞速 开局；/选马 编号 金额；/开跑；/取消竞速\n"
-        "选择参赛者后等待开跑，所选参赛者夺冠按奖池折算分账，保底约1.9倍；单次最多100积分。\n"
-        f"\n【多人转盘｜{status['legacy_roulette']}】\n"
-        "/转盘 金额（单人）；/转盘挑战 金额；/加入转盘；/开始转盘；/转一轮；/取消转盘\n"
-        "单人局通过安全格可得0.15倍奖励；多人局支持2至6人，最后留在局中的人获得95%积分池；单次最多100积分。\n"
-        "\n======================\n"
-        "/小游戏状态 - 查看五种游戏开关\n"
-        "『旧局翻开凭兴致，得失且作一篇诗。』"
+    lines = [
+        "🎮 李太白给·游戏大厅 🎮",
+        "======================",
+        f"（铺开旧局）今日是{get_legacy_rotation_day_name()}，玩法与指令都记在这里：",
+        "======================",
+    ]
+    for game in LEGACY_GAMES:
+        lines.extend(
+            [
+                "",
+                f"【{game.display_name}｜{status[game.feature_key]}】",
+                "；".join(game.usage),
+                game.summary,
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "======================",
+            "/小游戏状态 - 查看五种游戏开关",
+            "『旧局翻开凭兴致，得失且作一篇诗。』",
+        ]
     )
+    return "\n".join(lines)
 
 
 # 帮助菜单
-help_cmd = on_command("help", aliases={"帮助", "菜单", "功能"}, priority=5, block=True)
+help_cmd = on_command("help", aliases={"帮助", "菜单", "功能", "功能菜单", "命令列表", "指令"}, priority=5, block=True)
 
 @help_cmd.handle()
 async def handle_help(bot: Bot, event: MessageEvent):
     await help_cmd.finish(render_help_menu())
 
 # 游戏列表
-game_list = on_command("游戏", aliases={"游戏列表", "小游戏"}, priority=5, block=True)
+game_list = on_command("游戏", aliases={"游戏列表", "小游戏", "游戏大厅", "游戏大全"}, priority=5, block=True)
 
 @game_list.handle()
 async def handle_game_list(bot: Bot, event: MessageEvent):
@@ -124,7 +119,7 @@ async def handle_about(bot: Bot, event: MessageEvent):
     )
 
 # 积分说明
-points_help = on_command("积分说明", aliases={"积分帮助", "怎么赚积分"}, priority=5, block=True)
+points_help = on_command("积分说明", aliases={"积分帮助", "怎么赚积分", "积分规则", "怎么得积分"}, priority=5, block=True)
 
 @points_help.handle()
 async def handle_points_help(bot: Bot, event: MessageEvent):

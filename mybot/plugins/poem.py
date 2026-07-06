@@ -16,11 +16,11 @@ HELP_ITEMS = (
     HelpItem("诗词文艺", "/随机诗词 - 欣赏随机诗词", 50),
 )
 COMMAND_ALIASES = (
-    "作诗", "写诗", "赋诗",
-    "解诗", "诗词解析", "赏析",
-    "对对联", "对联", "出上联", "对下联",
-    "诗词接龙", "接诗", "接龙",
-    "随机诗词", "来首诗", "随机古诗",
+    "作诗", "写诗", "赋诗", "写首诗", "做诗", "吟诗",
+    "解诗", "诗词解析", "赏析", "赏诗", "诗词赏析", "解读诗词",
+    "对对联", "对联", "出上联", "对下联", "对对子", "对子", "对个对子",
+    "诗词接龙", "接诗", "接龙", "诗接龙", "诗词接句",
+    "随机诗词", "来首诗", "随机古诗", "每日一诗", "抽首诗", "来首古诗",
 )
 
 # 李太白给人设
@@ -51,7 +51,7 @@ async def call_api(prompt: str, system: str = SYSTEM_PROMPT, temperature: float 
     )
 
 # ==================== 作诗 ====================
-write_poem = on_command("作诗", aliases={"写诗", "赋诗"}, priority=5, block=True)
+write_poem = on_command("作诗", aliases={"写诗", "赋诗", "写首诗", "做诗", "吟诗"}, priority=5, block=True)
 
 @write_poem.handle()
 async def handle_write_poem(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
@@ -95,7 +95,7 @@ async def handle_write_poem(bot: Bot, event: MessageEvent, args: Message = Comma
         await write_poem.finish(random.choice(ERROR_MESSAGES))
 
 # ==================== 解诗 ====================
-explain_poem = on_command("解诗", aliases={"诗词解析", "赏析"}, priority=5, block=True)
+explain_poem = on_command("解诗", aliases={"诗词解析", "赏析", "赏诗", "诗词赏析", "解读诗词"}, priority=5, block=True)
 
 @explain_poem.handle()
 async def handle_explain_poem(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
@@ -139,7 +139,7 @@ async def handle_explain_poem(bot: Bot, event: MessageEvent, args: Message = Com
         await explain_poem.finish(random.choice(ERROR_MESSAGES))
 
 # ==================== 对对联 ====================
-couplet = on_command("对对联", aliases={"对联", "出上联", "对下联"}, priority=5, block=True)
+couplet = on_command("对对联", aliases={"对联", "出上联", "对下联", "对对子", "对子", "对个对子"}, priority=5, block=True)
 
 @couplet.handle()
 async def handle_couplet(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
@@ -190,7 +190,7 @@ async def handle_couplet(bot: Bot, event: MessageEvent, args: Message = CommandA
         await couplet.finish(random.choice(ERROR_MESSAGES))
 
 # ==================== 诗词接龙 ====================
-poetry_chain = on_command("诗词接龙", aliases={"接诗", "接龙"}, priority=5, block=True)
+poetry_chain = on_command("诗词接龙", aliases={"接诗", "接龙", "诗接龙", "诗词接句"}, priority=5, block=True)
 
 @poetry_chain.handle()
 async def handle_poetry_chain(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
@@ -243,7 +243,7 @@ async def handle_poetry_chain(bot: Bot, event: MessageEvent, args: Message = Com
         await poetry_chain.finish(random.choice(ERROR_MESSAGES))
 
 # ==================== 随机诗词 ====================
-random_poem = on_command("随机诗词", aliases={"来首诗", "随机古诗"}, priority=5, block=True)
+random_poem = on_command("随机诗词", aliases={"来首诗", "随机古诗", "每日一诗", "抽首诗", "来首古诗"}, priority=5, block=True)
 
 @random_poem.handle()
 async def handle_random_poem(bot: Bot, event: MessageEvent):

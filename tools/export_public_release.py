@@ -35,6 +35,7 @@ EXCLUDED_RELATIVE_DIRECTORIES = {
     Path("tmp_export_checks"),
 }
 EXCLUDED_FILES = {
+    Path(".codex_pr_body.md"),
     Path("mybot/！"),
 }
 EXCLUDED_SUFFIXES = {".bak", ".db", ".pyo", ".pyc", ".sqlite", ".sqlite3"}
@@ -168,11 +169,10 @@ def _sanitize_release_config(destination: Path) -> None:
         'return get_env_int_list("DAILY_GREET_GROUPS")',
         config_text,
     )
-    if replacements == 0 and 'return get_env_int_list("DAILY_GREET_GROUPS")' in config_text:
-        sanitized_text = config_text
-    elif replacements != 1:
+    if replacements > 1:
         raise RuntimeError("could not sanitize DAILY_GREET_GROUPS fallback in public release")
-    config_path.write_text(sanitized_text, encoding="utf-8")
+    if replacements == 1:
+        config_path.write_text(sanitized_text, encoding="utf-8")
 
     (destination / "mybot/.env.example").write_text(PUBLIC_ENV_TEMPLATE, encoding="utf-8")
     (destination / ".gitignore").write_text(PUBLIC_GITIGNORE, encoding="utf-8")
@@ -181,6 +181,20 @@ def _sanitize_release_config(destination: Path) -> None:
     for path in (destination / "backups", destination / "mybot/data", destination / "mybot/logs"):
         path.mkdir(parents=True, exist_ok=True)
         (path / ".gitkeep").touch()
+
+
+def _sanitize_release_blacklist(destination: Path) -> None:
+    blacklist_path = destination / "mybot/plugins/blacklist.py"
+    blacklist_text = blacklist_path.read_text(encoding="utf-8")
+    sanitized_text, replacements = re.subn(
+        r"(?m)^BLACKLIST_WORDS\s*=\s*\[[^\r\n]*\]",
+        "BLACKLIST_WORDS = []",
+        blacklist_text,
+        count=1,
+    )
+    if replacements != 1:
+        raise RuntimeError("could not sanitize BLACKLIST_WORDS in public release")
+    blacklist_path.write_text(sanitized_text, encoding="utf-8")
 
 
 def _verify_release(destination: Path) -> None:
@@ -225,6 +239,7 @@ def export_release(destination: Path, overwrite: bool, exclude_disabled_plugins:
         destination.mkdir(parents=True)
     _copy_source(source, destination, exclude_disabled_plugins)
     _sanitize_release_config(destination)
+    _sanitize_release_blacklist(destination)
     _verify_release(destination)
     print(f"Public release exported to: {destination}")
 

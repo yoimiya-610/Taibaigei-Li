@@ -18,12 +18,12 @@ MAX_BET = 100
 POOL_PAYOUT_RATE = 0.95
 MIN_RETURN_MULTIPLIER = 1.9
 HELP_ITEMS = (
-    HelpItem("小游戏", "/竞速 - 赛博竞速", 50),
+    HelpItem("小游戏", "/赛博竞速 - 赛博竞速", 50),
 )
 COMMAND_ALIASES = (
+    "赛博竞速",
     "竞速",
     "开始竞速",
-    "赛博竞速",
     "选马",
     "选择竞速",
     "开跑",
@@ -67,7 +67,7 @@ EVENTS = [
 
 # 开赛文案
 START_MESSAGES = [
-    "（敲锣）诸位诸位！竞速大会即将开始！快来选择！",
+    "（敲锣）诸位诸位！赛博竞速即将开始！快来选择！",
     "（推墨镜）又到了见证奇迹的时刻~谁是今日的幸运儿？",
     "（晃酒壶）人生如竞速，不选择怎知结果？来来来~",
     "（甩袖）风萧萧兮易水寒，竞速一去兮不复还...等等，选择了吗？",
@@ -112,17 +112,17 @@ BET_LOSE_MESSAGES = [
 # 无人参与文案
 NO_BET_MESSAGES = [
     "（委屈）没人选择...选手们白跑了...",
-    "（叹气）竞速取消，本猫去喝闷酒了...",
+    "（叹气）赛博竞速取消，本猫去喝闷酒了...",
     "（收起旗子）没人捧场，本猫好寂寞...",
 ]
 
 # 开始比赛
-start_race = on_command("竞速", aliases={"开始竞速", "赛博竞速"}, rule=FEATURE_RULE, priority=5, block=True)
+start_race = on_command("赛博竞速", aliases={"竞速", "开始竞速"}, rule=FEATURE_RULE, priority=5, block=True)
 
 @start_race.handle()
 async def handle_start_race(bot: Bot, event: MessageEvent):
     if not isinstance(event, GroupMessageEvent):
-        await start_race.finish("（摇头）竞速要在群里才热闹嘛~")
+        await start_race.finish("（摇头）赛博竞速要在群里才热闹嘛~")
     
     group_id = str(event.group_id)
     user_id = event.get_user_id()
@@ -131,7 +131,7 @@ async def handle_start_race(bot: Bot, event: MessageEvent):
     if group_id in active_races:
         race = active_races[group_id]
         if race["started"]:
-            await start_race.finish("（指向赛道）比赛正在进行中！先看完这场再说~")
+            await start_race.finish("（指向赛道）赛博竞速正在进行中！先看完这场再说~")
         else:
             horses_list = "\n".join([f"{i+1}. {h['emoji']} {h['name']}" for i, h in enumerate(race["horses"])])
             await start_race.finish(
@@ -148,7 +148,7 @@ async def handle_start_race(bot: Bot, event: MessageEvent):
         user_info = await bot.get_stranger_info(user_id=int(user_id))
         nickname = user_info.get("nickname", user_id)
     except Exception as exc:
-        logger.warning(f"竞速创建获取昵称失败 user_id={user_id}: {exc}")
+        logger.warning(f"赛博竞速创建获取昵称失败 user_id={user_id}: {exc}")
         nickname = user_id
     
     # 随机选4匹马参赛
@@ -166,9 +166,9 @@ async def handle_start_race(bot: Bot, event: MessageEvent):
     start_msg = random.choice(START_MESSAGES)
     
     await start_race.send(
-        f"🏇 李太白给·竞速大会 🏇\n"
+        f"🏇 李太白给·赛博竞速 🏇\n"
         f"{'='*20}\n"
-        f"📢 {nickname} 发起了竞速！\n"
+        f"📢 {nickname} 发起了赛博竞速！\n"
         f"{'='*20}\n"
         f"{start_msg}\n"
         f"{'='*20}\n"
@@ -198,9 +198,9 @@ async def auto_start_race(bot: Bot, group_id: str):
             del active_races[group_id]
             try:
                 msg = random.choice(NO_BET_MESSAGES)
-                await bot.send_group_msg(group_id=int(group_id), message=f"🏇 竞速取消 🏇\n{'='*20}\n{msg}")
+                await bot.send_group_msg(group_id=int(group_id), message=f"🏇 赛博竞速取消 🏇\n{'='*20}\n{msg}")
             except Exception as exc:
-                logger.exception(f"发送竞速无人参与取消消息失败 group_id={group_id}: {exc}")
+                logger.exception(f"发送赛博竞速无人参与取消消息失败 group_id={group_id}: {exc}")
 
 # 参与
 bet_horse = on_command("选马", aliases={"选择竞速"}, rule=FEATURE_RULE, priority=5, block=True)
@@ -214,7 +214,7 @@ async def handle_bet_horse(bot: Bot, event: MessageEvent, args: Message = Comman
     user_id = event.get_user_id()
     
     if group_id not in active_races:
-        await bet_horse.finish("（摊手）当前没有竞速，输入 /竞速 开一局？")
+        await bet_horse.finish("（摊手）当前没有赛博竞速，输入 /赛博竞速 开一局？")
     
     race = active_races[group_id]
     
@@ -255,7 +255,7 @@ async def handle_bet_horse(bot: Bot, event: MessageEvent, args: Message = Comman
         user_info = await bot.get_stranger_info(user_id=int(user_id))
         nickname = user_info.get("nickname", user_id)
     except Exception as exc:
-        logger.warning(f"竞速参与获取昵称失败 user_id={user_id}: {exc}")
+        logger.warning(f"赛博竞速参与获取昵称失败 user_id={user_id}: {exc}")
         nickname = user_id
     
     # 检查积分
@@ -308,7 +308,7 @@ async def handle_go_race(bot: Bot, event: MessageEvent):
     group_id = str(event.group_id)
     
     if group_id not in active_races:
-        await go_race.finish("（摊手）当前没有竞速！")
+        await go_race.finish("（摊手）当前没有赛博竞速！")
     
     race = active_races[group_id]
     
@@ -339,10 +339,10 @@ async def run_race(bot: Bot, group_id: str):
     try:
         await bot.send_group_msg(
             group_id=int(group_id),
-            message=f"🏇 比赛开始！🏇\n{'='*20}\n{start_msg}"
+            message=f"🏇 赛博竞速开始！🏇\n{'='*20}\n{start_msg}"
         )
     except Exception as exc:
-        logger.exception(f"发送竞速开始消息失败 group_id={group_id}: {exc}")
+        logger.exception(f"发送赛博竞速开始消息失败 group_id={group_id}: {exc}")
     
     await asyncio.sleep(1)
     
@@ -385,7 +385,7 @@ async def run_race(bot: Bot, group_id: str):
         try:
             await bot.send_group_msg(group_id=int(group_id), message=msg)
         except Exception as exc:
-            logger.exception(f"发送竞速过程消息失败 group_id={group_id}: {exc}")
+            logger.exception(f"发送赛博竞速过程消息失败 group_id={group_id}: {exc}")
         
         await asyncio.sleep(2)
     
@@ -466,10 +466,10 @@ async def run_race(bot: Bot, group_id: str):
 {'='*20}
 『{poem}』
 {'='*20}
-输入 /竞速 开始新一场！"""
+输入 /赛博竞速 开始新一场！"""
         )
     except Exception as exc:
-        logger.exception(f"发送竞速结算消息失败 group_id={group_id}: {exc}")
+        logger.exception(f"发送赛博竞速结算消息失败 group_id={group_id}: {exc}")
 
 # 取消比赛
 cancel_race = on_command("取消竞速", rule=FEATURE_RULE, priority=5, block=True)
@@ -482,7 +482,7 @@ async def handle_cancel_race(bot: Bot, event: MessageEvent):
     group_id = str(event.group_id)
     
     if group_id not in active_races:
-        await cancel_race.finish("（摊手）当前没有竞速！")
+        await cancel_race.finish("（摊手）当前没有赛博竞速！")
     
     race = active_races[group_id]
     
@@ -496,7 +496,7 @@ async def handle_cancel_race(bot: Bot, event: MessageEvent):
     del active_races[group_id]
     
     await cancel_race.finish(
-        f"🏇 竞速已取消，积分已退还~\n"
+        f"🏇 赛博竞速已取消，积分已退还~\n"
         f"{'='*20}\n"
         f"（收起旗子）没事没事，改日再来~"
     )

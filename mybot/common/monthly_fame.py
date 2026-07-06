@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from mybot.common.gift_store import GIFT_BY_ID, add_gift_item
 from mybot.common.charm import get_monthly_charm_gains
 from mybot.common.interaction_stats import get_monthly_auto_reply_counts
 from mybot.common.json_store import load_json, mutate_json
@@ -18,6 +19,11 @@ RANK_TITLES = {
     1: "monthly_fame_first",
     2: "monthly_fame_second",
     3: "monthly_fame_third",
+}
+RANK_GIFTS = {
+    1: "crown",
+    2: "perfume",
+    3: "star_lantern",
 }
 
 
@@ -159,12 +165,19 @@ def settle_monthly_fame(group_id: str, month: str | None = None) -> dict:
     awards = []
     for index, row in enumerate(rankings, 1):
         title = grant_title(row["user_id"], group_id, RANK_TITLES[index])
+        gift_id = RANK_GIFTS[index]
+        gift = GIFT_BY_ID[gift_id]
+        add_gift_item(row["user_id"], group_id, gift_id, 1)
         awards.append(
             {
                 "rank": index,
                 "user_id": row["user_id"],
                 "title_id": title.id if title else "",
                 "title": title.title if title else "",
+                "gift_id": gift_id,
+                "gift_name": gift["name"],
+                "gift_icon": gift["icon"],
+                "gift_quantity": 1,
             }
         )
 

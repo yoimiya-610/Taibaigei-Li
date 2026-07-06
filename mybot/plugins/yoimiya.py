@@ -7,12 +7,12 @@ from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.message_utils import get_message_text, is_explicit_command_text
 
 # 触发关键词
-TRIGGER_WORDS = ["悠依米亚", "yoimiya", "米亚", "mia", "方思琰", "fsy", "fangsiyan"]
+TRIGGER_WORDS = ["悠依米亚", "yoimiya", "米亚", "mia"]
 COMMAND_ALIASES = tuple(TRIGGER_WORDS)
 
-def check_youyimiya(event: MessageEvent) -> bool:
+def check_yoimiya(event: MessageEvent) -> bool:
     """只检查普通文本中的关键词，不让命令参数或 @ 昵称触发。"""
-    if not is_feature_enabled("youyimiya"):
+    if not is_feature_enabled("yoimiya"):
         return False
 
     msg = get_message_text(event)
@@ -150,14 +150,14 @@ ENDING_POEMS = [
     "\n\n『悠依米亚真会裁，\n裁出本猫这张牌。\n若问此物有何用，\n专门逗你笑开怀~』",
 ]
 
-youyimiya_reply = on_message(rule=Rule(check_youyimiya), priority=2, block=True)
+yoimiya_reply = on_message(rule=Rule(check_yoimiya), priority=2, block=True)
 
-@youyimiya_reply.handle()
-async def handle_youyimiya(event: MessageEvent):
+@yoimiya_reply.handle()
+async def handle_yoimiya(event: MessageEvent):
     intro = random.choice(INTRO_MESSAGES)
     poem = random.choice(ENDING_POEMS)
     
-    await youyimiya_reply.finish(
+    await yoimiya_reply.finish(
         f"🎮 李太白给·官方介绍 🎮\n"
         f"{'='*20}\n"
         f"（推墨镜，清嗓子）\n"

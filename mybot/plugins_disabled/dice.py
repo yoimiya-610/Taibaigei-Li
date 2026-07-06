@@ -18,13 +18,13 @@ MAX_BET = 100
 BIG_SMALL_PAYOUT = 1.95
 TRIPLE_PAYOUT = 34
 HELP_ITEMS = (
-    HelpItem("小游戏", "/点数挑战 - 点数方块", 30),
+    HelpItem("小游戏", "/点数方块 - 点数方块", 30),
 )
 COMMAND_ALIASES = (
+    "点数方块",
     "点数挑战",
     "点数局",
     "开点数局",
-    "点数方块",
     "选大",
     "选小",
     "选三同",
@@ -38,7 +38,7 @@ async def _feature_enabled() -> bool:
 
 FEATURE_RULE = Rule(_feature_enabled)
 
-# 存储进行中的点数局 {group_id: {"bets": {user_id: {"type": str, "amount": int}}, "starter": str}}
+# 存储进行中的点数方块 {group_id: {"bets": {user_id: {"type": str, "amount": int}}, "starter": str}}
 active_games = {}
 
 # 开场文案
@@ -91,7 +91,7 @@ TIE_MESSAGES = [
 NO_BET_MESSAGES = [
     "（委屈）一个人都没有...本诗人好寂寞...",
     "（收起点数方块）没人陪本诗人玩，那本诗人去撩别的群友了~",
-    "（叹气）点数局作废~诸位是不是不爱本诗人了？",
+    "（叹气）点数方块作废~诸位是不是不爱本诗人了？",
 ]
 
 # 积分不足文案
@@ -101,8 +101,8 @@ NO_POINTS_MESSAGES = [
     "（心疼）哎呀，只有 {points} 积分了？要不要本诗人借你点？...开玩笑的，快去签到！",
 ]
 
-# 点数挑战
-start_dice = on_command("点数挑战", aliases={"点数局", "开点数局", "点数方块"}, rule=FEATURE_RULE, priority=5, block=True)
+# 点数方块
+start_dice = on_command("点数方块", aliases={"点数挑战", "点数局", "开点数局"}, rule=FEATURE_RULE, priority=5, block=True)
 
 @start_dice.handle()
 async def handle_start_dice(bot: Bot, event: MessageEvent):
@@ -113,19 +113,19 @@ async def handle_start_dice(bot: Bot, event: MessageEvent):
     group_id = str(event.group_id)
     user_id = event.get_user_id()
     
-    # 检查是否已有进行中的点数局
+    # 检查是否已有进行中的点数方块
     if group_id in active_games:
-        await start_dice.finish("（敲桌子）本群已有点数局进行中！\n要么参与，要么等着，别急~")
+        await start_dice.finish("（敲桌子）本群已有点数方块进行中！\n要么参与，要么等着，别急~")
     
     # 获取昵称
     try:
         user_info = await bot.get_stranger_info(user_id=int(user_id))
         nickname = user_info.get("nickname", user_id)
     except Exception as exc:
-        logger.warning(f"点数局创建获取昵称失败 user_id={user_id}: {exc}")
+        logger.warning(f"点数方块创建获取昵称失败 user_id={user_id}: {exc}")
         nickname = user_id
     
-    # 创建点数局
+    # 创建点数方块
     active_games[group_id] = {
         "bets": {},
         "starter": nickname
@@ -134,9 +134,9 @@ async def handle_start_dice(bot: Bot, event: MessageEvent):
     start_msg = random.choice(START_MESSAGES)
     
     await start_dice.send(
-        f"🎲 李太白给·点数方块大小 🎲\n"
+        f"🎲 李太白给·点数方块 🎲\n"
         f"{'='*20}\n"
-        f"📢 {nickname} 开启了点数局！\n"
+        f"📢 {nickname} 开启了点数方块！\n"
         f"{'='*20}\n"
         f"{start_msg}\n"
         f"{'='*20}\n"
@@ -155,7 +155,7 @@ async def auto_settle(bot: Bot, group_id: str):
     """30秒后自动结算"""
     await asyncio.sleep(30)
     
-    # 检查点数局是否还存在（可能已被手动结算）
+    # 检查点数方块是否还存在（可能已被手动结算）
     if group_id in active_games:
         await settle_game(bot, group_id)
 
@@ -191,9 +191,9 @@ async def place_bet(bot: Bot, event: MessageEvent, bet_type: str, args: Message)
     group_id = str(event.group_id)
     user_id = event.get_user_id()
     
-    # 检查是否有进行中的点数局
+    # 检查是否有进行中的点数方块
     if group_id not in active_games:
-        await bot.send(event, "（摊手）当前没有点数局~输入 /点数挑战 开一局？")
+        await bot.send(event, "（摊手）当前没有点数方块~输入 /点数方块 开一局？")
         return
     
     game = active_games[group_id]
@@ -241,7 +241,7 @@ async def place_bet(bot: Bot, event: MessageEvent, bet_type: str, args: Message)
         user_info = await bot.get_stranger_info(user_id=int(user_id))
         nickname = user_info.get("nickname", user_id)
     except Exception as exc:
-        logger.warning(f"点数局参与获取昵称失败 user_id={user_id}: {exc}")
+        logger.warning(f"点数方块参与获取昵称失败 user_id={user_id}: {exc}")
         nickname = user_id
     
     # 记录参与
@@ -265,12 +265,12 @@ async def handle_settle(bot: Bot, event: MessageEvent):
     group_id = str(event.group_id)
     
     if group_id not in active_games:
-        await settle.finish("（摊手）当前没有点数局~")
+        await settle.finish("（摊手）当前没有点数方块~")
     
     await settle_game(bot, group_id)
 
 async def settle_game(bot: Bot, group_id: str):
-    """结算点数局"""
+    """结算点数方块"""
     if group_id not in active_games:
         return
     
@@ -282,9 +282,9 @@ async def settle_game(bot: Bot, group_id: str):
         del active_games[group_id]
         try:
             msg = random.choice(NO_BET_MESSAGES)
-            await bot.send_group_msg(group_id=int(group_id), message=f"🎲 点数局结束 🎲\n{'='*20}\n{msg}")
+            await bot.send_group_msg(group_id=int(group_id), message=f"🎲 点数方块结束 🎲\n{'='*20}\n{msg}")
         except Exception as exc:
-            logger.exception(f"发送无人参与点数局结束消息失败 group_id={group_id}: {exc}")
+            logger.exception(f"发送无人参与点数方块结束消息失败 group_id={group_id}: {exc}")
         return
     
     # 掷点数方块
@@ -326,7 +326,7 @@ async def settle_game(bot: Bot, group_id: str):
             else:
                 losers.append(f"💀 {nickname}：-{amount}（选{bet_type}）")
     
-    # 删除点数局
+    # 删除点数方块
     del active_games[group_id]
     
     # 生成结果消息
@@ -354,7 +354,7 @@ async def settle_game(bot: Bot, group_id: str):
     else:
         poem = "点数方块一掷定结果，\n几家欢喜几家愁。\n明日再来战一场，\n结果不过云烟中~"
     
-    msg = f"""🎲 李太白给·结算 🎲
+    msg = f"""🎲 李太白给·点数方块结算 🎲
 {'='*20}
 {dice_display}
 {result_emoji}
@@ -369,12 +369,12 @@ async def settle_game(bot: Bot, group_id: str):
 {'='*20}
 『{poem}』
 {'='*20}
-输入 /点数挑战 再来一局！"""
+输入 /点数方块 再来一局！"""
     
     try:
         await bot.send_group_msg(group_id=int(group_id), message=msg)
     except Exception as exc:
-        logger.exception(f"发送点数局结算消息失败 group_id={group_id}: {exc}")
+        logger.exception(f"发送点数方块结算消息失败 group_id={group_id}: {exc}")
 
 
 

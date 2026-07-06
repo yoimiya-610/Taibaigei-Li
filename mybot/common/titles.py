@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from calendar import monthrange
@@ -15,6 +16,7 @@ CLASSICS_FILE = BOT_ROOT / "data" / "classics.json"
 FORTUNE_FILE = BOT_ROOT / "data" / "fortune_data.json"
 MONTHLY_FAME_FILE = BOT_ROOT / "data" / "monthly_fame.json"
 SLOT_STATS_FILE = BOT_ROOT / "data" / "slot_stats.json"
+GIFT_STATS_FILE = BOT_ROOT / "data" / "gift_title_stats.json"
 DEFAULT_TITLE_DATA = {"users": {}}
 
 
@@ -97,10 +99,17 @@ ACHIEVEMENTS = (
     TitleAchievement("secret_fame_podium", "三台同登者", "秘闻", "三台同登", "monthly_fame_podium_count", 3, "分别登上月榜前三席", 9080, True),
     TitleAchievement("secret_fame_three_firsts", "三月风云主", "秘闻", "三月魁首", "monthly_fame_first_count", 3, "三次登临月榜榜首", 9090, True),
     TitleAchievement("secret_slot_grape", "青藤摘星手", "秘闻", "青藤摘星", "slot_grape_or_better_count", 1, "图案转盘转出过葡萄三连或更高奖面", 9100, True),
+    TitleAchievement("secret_flight_cup_misgift", "起飞失败", "秘闻", "起飞失败", "flight_cup_misgift_count", 1, "把✈杯送给别人一次", 9110, True),
 )
 
 ALL_TITLES = (DEFAULT_TITLE,) + ACHIEVEMENTS
 TITLE_BY_ID = {achievement.id: achievement for achievement in ALL_TITLES}
+TITLE_RARITY_RATES = {
+    "R": 1,
+    "SR": 2,
+    "SSR": 3,
+    "UR": 4,
+}
 POINT_TITLE_IDS = {
     achievement.id
     for achievement in ACHIEVEMENTS
@@ -110,6 +119,94 @@ POINT_TITLE_IDS = {
 
 def _title_key(group_id: str, user_id: str) -> str:
     return f"{group_id}_{user_id}"
+
+
+def get_title_rarity(achievement: TitleAchievement) -> str:
+    if achievement.hidden:
+        return "UR"
+    if achievement.id == "default":
+        return "R"
+
+    if achievement.category == "积分":
+        if achievement.threshold >= 100000:
+            return "UR"
+        if achievement.threshold >= 20000:
+            return "SSR"
+        if achievement.threshold >= 5000:
+            return "SR"
+        return "R"
+
+    if achievement.category == "签到":
+        if achievement.threshold >= 365:
+            return "UR"
+        if achievement.threshold >= 100:
+            return "SSR"
+        if achievement.threshold >= 14:
+            return "SR"
+        return "R"
+
+    if achievement.category == "签运":
+        if achievement.id == "fortune_unknown":
+            return "UR"
+        if achievement.threshold >= 10 or achievement.threshold >= 20:
+            return "SSR"
+        if achievement.threshold >= 3 or achievement.threshold >= 5:
+            return "SR"
+        return "R"
+
+    if achievement.category == "魅力":
+        if achievement.threshold >= 1000:
+            return "UR"
+        if achievement.threshold >= 300:
+            return "SSR"
+        if achievement.threshold >= 100:
+            return "SR"
+        return "R"
+
+    if achievement.category == "自动回话":
+        if achievement.threshold >= 200:
+            return "SSR"
+        if achievement.threshold >= 10:
+            return "SR"
+        return "R"
+
+    if achievement.category in {"入典", "执笔"}:
+        if achievement.threshold >= 50:
+            return "SSR"
+        if achievement.threshold >= 10:
+            return "SR"
+        return "R"
+
+    if achievement.category == "风云榜":
+        return "SSR"
+
+    return "R"
+
+
+def get_title_trigger_rate(rarity: str) -> int:
+    return TITLE_RARITY_RATES.get(rarity, 1)
+
+
+def roll_title_fortune_bonus(
+    user_id: str,
+    group_id: str,
+    date_text: str,
+    points_info: dict | None = None,
+) -> dict:
+    display = get_display_title(user_id, group_id, points_info)
+    achievement = TITLE_BY_ID.get(str(display.get("title_id", "")), DEFAULT_TITLE)
+    rarity = get_title_rarity(achievement)
+    trigger_rate = get_title_trigger_rate(rarity)
+    seed_text = f"{date_text}:{group_id}:{user_id}:{achievement.id}:title-power"
+    roll = int.from_bytes(hashlib.sha256(seed_text.encode("utf-8")).digest()[:4], "big") % 100
+    activated = roll < trigger_rate
+    return {
+        "title_id": achievement.id,
+        "title": achievement.title,
+        "rarity": rarity,
+        "trigger_rate": trigger_rate,
+        "activated": activated,
+    }
 
 
 def _safe_int(value) -> int:
@@ -311,6 +408,16 @@ def _slot_easter_egg_metrics(user_id: str, group_id: str) -> dict[str, int]:
     }
 
 
+def _gift_easter_egg_metrics(user_id: str, group_id: str) -> dict[str, int]:
+    data = load_json(GIFT_STATS_FILE, {"users": {}})
+    record = data.get("users", {}).get(_title_key(group_id, user_id), {})
+    if not isinstance(record, dict):
+        return {"flight_cup_misgift_count": 0}
+    return {
+        "flight_cup_misgift_count": _safe_int(record.get("flight_cup_misgift_count", 0)),
+    }
+
+
 def collect_title_metrics(user_id: str, group_id: str, points_info: dict | None = None) -> dict[str, int]:
     points_info = points_info or {}
     quote_speaker_count, quote_recorder_count = _quote_counts(user_id, group_id)
@@ -332,6 +439,7 @@ def collect_title_metrics(user_id: str, group_id: str, points_info: dict | None 
     metrics.update(_quote_easter_egg_metrics(user_id, group_id))
     metrics.update(_monthly_fame_easter_egg_metrics(user_id, group_id))
     metrics.update(_slot_easter_egg_metrics(user_id, group_id))
+    metrics.update(_gift_easter_egg_metrics(user_id, group_id))
     metrics["charm_reply_resonance"] = int(
         metrics["charm"] >= 500 and metrics["auto_reply_count"] >= 50
     )
@@ -357,6 +465,27 @@ def record_slot_grape_or_better(user_id: str, group_id: str) -> int:
         return int(record["grape_or_better_count"])
 
     return mutate_json(SLOT_STATS_FILE, {"users": {}}, mutator)
+
+
+def record_flight_cup_misgift(user_id: str, group_id: str) -> int:
+    key = _title_key(group_id, user_id)
+
+    def mutator(data: dict) -> int:
+        users = data.setdefault("users", {})
+        record = users.setdefault(
+            key,
+            {
+                "user_id": user_id,
+                "group_id": group_id,
+                "flight_cup_misgift_count": 0,
+            },
+        )
+        record["user_id"] = user_id
+        record["group_id"] = group_id
+        record["flight_cup_misgift_count"] = _safe_int(record.get("flight_cup_misgift_count", 0)) + 1
+        return int(record["flight_cup_misgift_count"])
+
+    return mutate_json(GIFT_STATS_FILE, {"users": {}}, mutator)
 
 
 def _sort_title_ids(title_ids: set[str] | list[str]) -> list[str]:
@@ -448,6 +577,8 @@ def get_display_title(user_id: str, group_id: str, points_info: dict | None = No
     return {
         "title": achievement.title,
         "title_id": achievement.id,
+        "rarity": get_title_rarity(achievement),
+        "trigger_rate": get_title_trigger_rate(get_title_rarity(achievement)),
         "manual": manual,
         "unlocked_count": len([title_id for title_id in unlocked_ids if title_id in visible_title_ids]),
         "total_count": len(visible_title_ids),
@@ -547,7 +678,7 @@ def render_title_list(user_id: str, group_id: str, points_info: dict | None = No
         "=" * 22,
         "（抖开名册）阁下这些名号，本猫都替你记着。",
         "=" * 22,
-        f"当前称号：{equipped_text}",
+        f"当前称号：{equipped_text} [{display['rarity']}]",
         f"名号入册：{display['unlocked_count']}/{display['total_count']}",
         "想看细则可用：/称号说明 称号名",
     ]
@@ -561,7 +692,7 @@ def render_title_list(user_id: str, group_id: str, points_info: dict | None = No
             lines.append(f"【{current_category}】")
 
         unlocked = achievement.id in unlocked_ids
-        lines.append(f"{'✓' if unlocked else '·'} {achievement.title}")
+        lines.append(f"{'✓' if unlocked else '·'} {achievement.title} [{get_title_rarity(achievement)}]")
 
     lines.append("『名号先看有无，细则改日慢翻。』")
     return "\n".join(lines)
@@ -605,6 +736,7 @@ def render_title_detail(identifier: str, user_id: str, group_id: str, points_inf
             "（指尖点过册页）这一笔来历，在此处写得分明。",
             "=" * 22,
             f"称号：{achievement.title}",
+            f"评级：{get_title_rarity(achievement)}（签到时有 {get_title_trigger_rate(get_title_rarity(achievement))}% 概率触发称号之力）",
             f"名册状态：{'已得' if unlocked else '未得'}",
             f"来历：{achievement.description}",
             progress_text,

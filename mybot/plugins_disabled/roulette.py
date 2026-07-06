@@ -18,11 +18,11 @@ MAX_BET = 100
 SOLO_SAFE_BONUS_RATE = 0.15
 PVP_POOL_PAYOUT_RATE = 0.95
 HELP_ITEMS = (
-    HelpItem("小游戏", "/转盘挑战 - 多人转盘", 60),
+    HelpItem("小游戏", "/转盘挑战 金额 - 转盘挑战", 60),
 )
 COMMAND_ALIASES = (
-    "转盘",
     "转盘挑战",
+    "转盘",
     "开转盘",
     "加入转盘",
     "开始转盘",
@@ -42,7 +42,7 @@ FEATURE_RULE = Rule(_feature_enabled)
 cooldown = {}
 COOLDOWN_TIME = 5
 
-# 多人转盘游戏 {group_id: {"players": [], "bet": int, "current": int, "bullet": int}}
+# 转盘挑战多人模式 {group_id: {"players": [], "bet": int, "current": int, "bullet": int}}
 pvp_games = {}
 
 # 单人揭结果文案
@@ -111,13 +111,13 @@ PVP_WIN_MESSAGES = [
     "（抛媚眼）得分者你好，要不要和本猫交个朋友？",
 ]
 
-# ========== 单人转盘 ==========
+# ========== 转盘挑战：单人模式 ==========
 solo_roulette = on_command("转盘", rule=FEATURE_RULE, priority=5, block=True)
 
 @solo_roulette.handle()
 async def handle_solo_roulette(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
     if not isinstance(event, GroupMessageEvent):
-        await solo_roulette.finish("（摇头）转盘要在群里玩才刺激~")
+        await solo_roulette.finish("（摇头）转盘挑战要在群里玩才刺激~")
     
     user_id = event.get_user_id()
     group_id = str(event.group_id)
@@ -142,7 +142,7 @@ async def handle_solo_roulette(bot: Bot, event: MessageEvent, args: Message = Co
     
     if not bet_str:
         await solo_roulette.finish(
-            f"🎲 李太白给·旧式转盘 🎲\n"
+            f"🎲 李太白给·转盘挑战 🎲\n"
             f"{'='*20}\n"
             f"（转动转盘）想不想来一轮挑战？\n"
             f"{'='*20}\n"
@@ -198,7 +198,7 @@ async def handle_solo_roulette(bot: Bot, event: MessageEvent, args: Message = Co
         poem = f"一声提示响魂归西，\n{nickname}积分化飞灰。\n早知今日闯关苦，\n不如当初去签到~"
         
         await solo_roulette.finish(
-            f"🎲 旧式转盘 🎲\n"
+            f"🎲 转盘挑战·单人模式 🎲\n"
             f"{'='*20}\n"
             f"{pull_msg}\n"
             f"{'='*20}\n"
@@ -223,7 +223,7 @@ async def handle_solo_roulette(bot: Bot, event: MessageEvent, args: Message = Co
         poem = f"空格一声响叮当，\n{nickname}今日命真长。\n小有收获一笔心欢畅，\n改日再来又何妨~"
         
         await solo_roulette.finish(
-            f"🎲 旧式转盘 🎲\n"
+            f"🎲 转盘挑战·单人模式 🎲\n"
             f"{'='*20}\n"
             f"{pull_msg}\n"
             f"{'='*20}\n"
@@ -238,9 +238,9 @@ async def handle_solo_roulette(bot: Bot, event: MessageEvent, args: Message = Co
             f"余额：{new_points['current']} 积分"
         )
 
-# ========== 多人转盘 ==========
+# ========== 转盘挑战：多人模式 ==========
 
-# 开启多人转盘
+# 开启转盘挑战
 start_pvp = on_command("转盘挑战", aliases={"开转盘"}, rule=FEATURE_RULE, priority=5, block=True)
 
 @start_pvp.handle()
@@ -270,7 +270,7 @@ async def handle_start_pvp(bot: Bot, event: MessageEvent, args: Message = Comman
     
     if not bet_str:
         await start_pvp.finish(
-            f"🎲 转盘挑战 🎲\n"
+            f"🎲 李太白给·转盘挑战 🎲\n"
             f"{'='*20}\n"
             f"用法：/转盘挑战 金额\n"
             f"例如：/转盘挑战 30\n"
@@ -304,7 +304,7 @@ async def handle_start_pvp(bot: Bot, event: MessageEvent, args: Message = Comman
         user_info = await bot.get_stranger_info(user_id=int(user_id))
         nickname = user_info.get("nickname", user_id)
     except Exception as exc:
-        logger.warning(f"多人转盘创建获取昵称失败 user_id={user_id}: {exc}")
+        logger.warning(f"转盘挑战创建获取昵称失败 user_id={user_id}: {exc}")
         nickname = user_id
     
     # 检查积分
@@ -374,7 +374,7 @@ async def handle_join_pvp(bot: Bot, event: MessageEvent):
         user_info = await bot.get_stranger_info(user_id=int(user_id))
         nickname = user_info.get("nickname", user_id)
     except Exception as exc:
-        logger.warning(f"多人转盘加入获取昵称失败 user_id={user_id}: {exc}")
+        logger.warning(f"转盘挑战加入获取昵称失败 user_id={user_id}: {exc}")
         nickname = user_id
     
     bet = game["bet"]

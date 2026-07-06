@@ -6,7 +6,7 @@ from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.message_utils import get_message_text, is_explicit_command_text
 
 # 违禁词列表
-BLACKLIST_WORDS = ["方思琰", "fsy","fangsiyan"]
+BLACKLIST_WORDS = []
 COMMAND_ALIASES = tuple(BLACKLIST_WORDS)
 
 def check_blacklist(event: MessageEvent) -> bool:

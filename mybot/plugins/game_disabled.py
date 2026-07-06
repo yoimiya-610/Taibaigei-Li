@@ -2,6 +2,7 @@ from nonebot import on_command
 
 from mybot.common.feature_flags import collect_features, get_legacy_game_status, get_legacy_rotation_day_name
 from mybot.common.help_registry import HelpItem
+from mybot.common.legacy_games import LEGACY_GAME_ORDER
 
 
 HELP_ITEMS = (
@@ -10,13 +11,6 @@ HELP_ITEMS = (
 COMMAND_ALIASES = ("小游戏状态", "历史小游戏")
 
 LEGACY_PREFIX = "legacy_"
-GAME_ORDER = (
-    "legacy_slot",
-    "legacy_dice",
-    "legacy_blackjack",
-    "legacy_race",
-    "legacy_roulette",
-)
 
 
 def _render_game_status() -> str:
@@ -25,7 +19,7 @@ def _render_game_status() -> str:
         for item in collect_features()
         if item["key"].startswith(LEGACY_PREFIX)
     }
-    games = [feature_map[key] for key in GAME_ORDER if key in feature_map]
+    games = [feature_map[key] for key in LEGACY_GAME_ORDER if key in feature_map]
 
     lines = [
         "🎮 李太白给·小游戏 🎮",

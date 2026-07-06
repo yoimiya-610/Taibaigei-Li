@@ -18,7 +18,7 @@ MAX_BET = 100
 NORMAL_WIN_PAYOUT = 2.0
 BLACKJACK_PAYOUT = 3.0
 HELP_ITEMS = (
-    HelpItem("小游戏", "/纸牌挑战 金额 - 纸牌点数", 40),
+    HelpItem("小游戏", "/纸牌挑战 金额 - 纸牌挑战", 40),
 )
 COMMAND_ALIASES = (
     "纸牌挑战",
@@ -205,7 +205,7 @@ async def handle_start_bj(bot: Bot, event: MessageEvent, args: Message = Command
             f"• 点数尽量接近21，不能超过\n"
             f"• A可当1或11点\n"
             f"• JQK都是10点\n"
-            f"• 超过纸牌点数算爆牌，直接暂落后\n"
+            f"• 超过21点算爆牌，直接暂落后\n"
             f"{'='*20}\n"
             f"操作：\n"
             f"/要牌 - 再来一张\n"
@@ -218,7 +218,7 @@ async def handle_start_bj(bot: Bot, event: MessageEvent, args: Message = Command
             f"• 平局归庄，不退选择\n"
             f"• 单次最高 {MAX_BET} 积分\n"
             f"{'='*20}\n"
-            f"『牌中自有黄金屋，\n纸牌点数见真功。\n小心谨慎莫贪多，\n见好就收是英雄~』"
+            f"『牌中自有黄金屋，\n纸牌挑战见真功。\n小心谨慎莫贪多，\n见好就收是英雄~』"
         )
     
     # 验证金额

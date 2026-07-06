@@ -28,7 +28,7 @@ from mybot.common.streak import (
     streak_key as _streak_key,
     sync_streak as _sync_streak,
 )
-from mybot.common.titles import grant_title
+from mybot.common.titles import get_display_title, grant_title, roll_title_fortune_bonus
 from mybot.common.user_utils import get_nickname
 
 
@@ -37,7 +37,7 @@ HELP_ITEMS = (
     HelpItem("签到积分", "/补签 - 补最近断签，10积分起", 15),
 )
 COMMAND_ALIASES = (
-    "运势", "今日运势", "抽签", "求签", "签到",
+    "运势", "今日运势", "求运势", "抽签", "求签", "签到", "今日签到", "每日签到", "打卡",
     "补签",
 )
 
@@ -98,9 +98,11 @@ def _find_makeup_target_date(data: dict, user_id: str, group_id: str, today_date
 
 def _get_makeup_plan(data: dict, user_id: str, group_id: str) -> dict:
     now = current_datetime()
-    target_date = _find_makeup_target_date(data, user_id, group_id, now.date())
+    today_date = now.date()
+    today_text = today_date.strftime("%Y-%m-%d")
+    target_date = _find_makeup_target_date(data, user_id, group_id, today_date)
     if not target_date:
-        return {"status": "none", "year": now.year}
+        return {"status": "none", "year": now.year, "today_date": today_text}
 
     usage_key = _makeup_usage_key(now.year, user_id, group_id)
     usage = data.get("makeup_usage", {}).get(usage_key, {})
@@ -109,6 +111,7 @@ def _get_makeup_plan(data: dict, user_id: str, group_id: str) -> dict:
     return {
         "status": "available",
         "target_date": target_date,
+        "today_date": today_text,
         "year": now.year,
         "used_count": used_count,
         "next_count": next_count,
@@ -118,6 +121,31 @@ def _get_makeup_plan(data: dict, user_id: str, group_id: str) -> dict:
 
 def get_makeup_plan(user_id: str, group_id: str) -> dict:
     return _get_makeup_plan(load_data(), user_id, group_id)
+
+
+def _refresh_today_fortune_streak_after_makeup(
+    data: dict,
+    user_id: str,
+    group_id: str,
+    today_text: str,
+    streak_count: int,
+) -> bool:
+    record = data.setdefault("fortune_record", {}).get(_fortune_record_key(today_text, user_id, group_id))
+    if not isinstance(record, dict):
+        return False
+
+    try:
+        previous_count = int(record.get("streak_count", 0))
+    except (TypeError, ValueError):
+        previous_count = 0
+
+    if previous_count >= streak_count:
+        return False
+
+    record["streak_count_before_makeup"] = previous_count
+    record["streak_count"] = streak_count
+    record["streak_repaired_by_makeup"] = True
+    return True
 
 
 def _apply_makeup(user_id: str, group_id: str, expected_cost: int) -> dict:
@@ -134,8 +162,21 @@ def _apply_makeup(user_id: str, group_id: str, expected_cost: int) -> dict:
 
         usage_key = _makeup_usage_key(plan["year"], user_id, group_id)
         data.setdefault("makeup_usage", {})[usage_key] = {"count": plan["next_count"]}
-        streak_count = _sync_streak(data, user_id, group_id)
-        return {**plan, "status": "created", "streak_count": streak_count}
+        today_date = datetime.strptime(plan["today_date"], "%Y-%m-%d").date()
+        streak_count = _sync_streak(data, user_id, group_id, today_date)
+        today_record_repaired = _refresh_today_fortune_streak_after_makeup(
+            data,
+            user_id,
+            group_id,
+            plan["today_date"],
+            streak_count,
+        )
+        return {
+            **plan,
+            "status": "created",
+            "streak_count": streak_count,
+            "today_record_repaired": today_record_repaired,
+        }
 
     return mutate_json(DATA_FILE, DEFAULT_FORTUNE_DATA, mutator)
 
@@ -936,31 +977,33 @@ def calculate_fortune_score(
     fortune_name: str,
     streak_count: int,
     special_event: dict | None = None,
+    title_bonus: dict | None = None,
 ) -> dict:
     base_points = FORTUNE_POINTS[fortune_name]
-    if fortune_name == UNKNOWN_FORTUNE_NAME:
-        return {
-            "base_points": base_points,
-            "streak_multiplier": 10,
-            "total_points": base_points,
-            "special_text": "",
-        }
-
-    streak_multiplier = get_streak_multiplier_tenths(streak_count)
-    total_points = apply_streak_multiplier(base_points, streak_multiplier)
+    streak_multiplier = 10 if fortune_name == UNKNOWN_FORTUNE_NAME else get_streak_multiplier_tenths(streak_count)
+    total_points = base_points if fortune_name == UNKNOWN_FORTUNE_NAME else apply_streak_multiplier(base_points, streak_multiplier)
     special_text = ""
-    if special_event:
+    if fortune_name != UNKNOWN_FORTUNE_NAME and special_event:
         if special_event["name"] == "🌈 好运加倍":
             total_points *= 2
         else:
             total_points += special_event["points"]
         special_text = f"\n✨ 特殊事件：{special_event['name']}（{special_event['desc']}）"
+    title_power_text = ""
+    if title_bonus and title_bonus.get("activated"):
+        total_points *= 2
+        title_power_text = (
+            f"\n🎖 称号之力：使用了“{title_bonus['title']}”的力量，积分翻倍"
+            f"（{title_bonus['rarity']}，触发率 {title_bonus['trigger_rate']}%）"
+        )
 
     return {
         "base_points": base_points,
         "streak_multiplier": streak_multiplier,
         "total_points": total_points,
         "special_text": special_text,
+        "title_power_text": title_power_text,
+        "title_bonus": dict(title_bonus or {}),
     }
 
 
@@ -1001,6 +1044,7 @@ def _build_fortune_record(
         "total_points": score["total_points"],
         "streak_count": streak_count,
         "streak_multiplier": score["streak_multiplier"],
+        "title_bonus": dict(score.get("title_bonus", {})),
         "award_tx_id": award_tx_id,
         "points_awarded": False,
     }
@@ -1021,6 +1065,25 @@ def _join_items(value) -> str:
     return str(value or "旧签册未留")
 
 
+def _format_titled_nickname(user_id: str, group_id: str, nickname: str) -> str:
+    title_info = get_display_title(user_id, group_id, get_points(user_id, group_id))
+    if str(title_info.get("title_id", "")) == "default":
+        return nickname
+    title = str(title_info.get("title", "")).strip()
+    if not title:
+        return nickname
+    return f"【{title}】{nickname}"
+
+
+def _render_streak_status(record: dict) -> str:
+    streak_count = record.get("streak_count", 0)
+    if record.get("streak_repaired_by_makeup"):
+        return f"🔥 连续签到 {streak_count} 天（补签已续上，今日积分按原签入账）"
+
+    multiplier = int(record.get("streak_multiplier", 10))
+    return f"🔥 连续签到 {streak_count} 天（签路倍率 x{format_streak_multiplier(multiplier)}）"
+
+
 def _render_full_fortune(
     nickname: str,
     record: dict,
@@ -1029,7 +1092,14 @@ def _render_full_fortune(
     point_label: str = "今日获得",
 ) -> str:
     special_text = f"\n✨ 特殊事件：{record['special_event']}" if record.get("special_event") else ""
-    multiplier = int(record.get("streak_multiplier", 10))
+    title_bonus = record.get("title_bonus", {}) if isinstance(record.get("title_bonus"), dict) else {}
+    title_power_text = ""
+    if title_bonus.get("activated"):
+        title_power_text = (
+            f"\n🎖 称号之力：使用了“{title_bonus.get('title', '旧名号')}”的力量，积分翻倍"
+            f"（{title_bonus.get('rarity', 'R')}，触发率 {title_bonus.get('trigger_rate', 1)}%）"
+        )
+    streak_status = _render_streak_status(record)
     output = f"""🎋 李太白给·今日运势签 🎋
 {'='*20}
 ✦ {nickname} の运势 ✦
@@ -1047,8 +1117,8 @@ def _render_full_fortune(
 
 『{record.get('poem', '旧签已落青册里，今日重看仍有风。')}』
 {'='*20}
-🔥 连续签到 {record.get('streak_count', 0)} 天（签路倍率 x{format_streak_multiplier(multiplier)}）
-💰 {point_label} {record.get('total_points', 0)} 积分{hidden_title_text}"""
+{streak_status}
+💰 {point_label} {record.get('total_points', 0)} 积分{title_power_text}{hidden_title_text}"""
     return output
 
 
@@ -1064,14 +1134,14 @@ def _render_compact_existing_fortune(nickname: str, record: dict) -> str:
         f"『一日一签天有定，重翻旧页也生香。』"
     )
 
-FORTUNE_TRIGGERS = {"运势", "今日运势", "抽签", "求签", "签到"}
+FORTUNE_TRIGGERS = {"运势", "今日运势", "求运势", "抽签", "求签", "签到", "今日签到", "每日签到", "打卡"}
 
 
 def is_plain_fortune(event: MessageEvent) -> bool:
     return get_message_text(event) in FORTUNE_TRIGGERS
 
 
-fortune = on_command("运势", aliases={"今日运势", "抽签", "求签", "签到"}, priority=5, block=True)
+fortune = on_command("运势", aliases={"今日运势", "求运势", "抽签", "求签", "签到", "今日签到", "每日签到", "打卡"}, priority=5, block=True)
 fortune_plain = on_message(rule=Rule(is_plain_fortune), priority=5, block=True)
 
 
@@ -1091,6 +1161,7 @@ async def send_fortune(matcher, bot: Bot, event: MessageEvent):
     award_tx_id = _award_tx_id(key)
     
     nickname = await get_nickname(bot, user_id, context="运势")
+    display_name = _format_titled_nickname(user_id, group_id, nickname)
     
     # 获取今日固定运势（全局一致）
     daily = get_daily_fortune(user_id, today_date)
@@ -1111,7 +1182,13 @@ async def send_fortune(matcher, bot: Bot, event: MessageEvent):
 
         # 连续签到倍率
         streak_count = check_streak(data, user_id, group_id, today)
-        score = calculate_fortune_score(daily["fortune_name"], streak_count, daily["special_event"])
+        title_bonus = roll_title_fortune_bonus(user_id, group_id, today, get_points(user_id, group_id))
+        score = calculate_fortune_score(
+            daily["fortune_name"],
+            streak_count,
+            daily["special_event"],
+            title_bonus=title_bonus,
+        )
         record = _build_fortune_record(today, user_id, group_id, daily, score, streak_count, award_tx_id)
         data["fortune_record"][key] = record
 
@@ -1147,16 +1224,16 @@ async def send_fortune(matcher, bot: Bot, event: MessageEvent):
             result = {**result, "points_awarded": True}
             if "poem" in result:
                 await matcher.finish(
-                    "『{nickname}』你今天在本群已经抽过签了！\n".format(nickname=nickname)
-                    + _render_full_fortune(nickname, result, point_label=point_label)
+                    "『{nickname}』你今天在本群已经抽过签了！\n".format(nickname=display_name)
+                    + _render_full_fortune(display_name, result, point_label=point_label)
                 )
 
         if isinstance(result, dict) and "poem" in result:
             await matcher.finish(
-                "『{nickname}』你今天在本群已经抽过签了！\n".format(nickname=nickname)
-                + _render_full_fortune(nickname, result, point_label="今日已得")
+                "『{nickname}』你今天在本群已经抽过签了！\n".format(nickname=display_name)
+                + _render_full_fortune(display_name, result, point_label="今日已得")
             )
-        await matcher.finish(_render_compact_existing_fortune(nickname, result if isinstance(result, dict) else {}))
+        await matcher.finish(_render_compact_existing_fortune(display_name, result if isinstance(result, dict) else {}))
 
     record = fortune_state["record"]
     total_points = record["total_points"]
@@ -1187,7 +1264,7 @@ async def send_fortune(matcher, bot: Bot, event: MessageEvent):
         )
 
     output = _render_full_fortune(
-        nickname,
+        display_name,
         record,
         hidden_title_text=hidden_title_text,
         prefix_text=unknown_notice,
@@ -1313,16 +1390,19 @@ async def handle_makeup(bot: Bot, event: MessageEvent):
         )
 
     nickname = await get_nickname(bot, user_id, context="补签")
+    display_name = _format_titled_nickname(user_id, group_id, nickname)
+    today_record_text = "今日签面：已同步补签后的连续天数\n" if result.get("today_record_repaired") else ""
     await makeup.finish(
         f"📜 补签成功 📜\n"
         f"{'='*20}\n"
         f"（提笔补完旧页）这一行总算续上，签路又顺了一截。\n"
         f"{'='*20}\n"
-        f"人物：{nickname}\n"
+        f"人物：{display_name}\n"
         f"补签日期：{result['target_date']}\n"
         f"花费：{cost} 积分\n"
         f"本年度已补签：{result['next_count']} 次\n"
         f"当前连续签到：{result['streak_count']} 天\n"
+        f"{today_record_text}"
         f"{'='*20}\n"
         f"『旧页墨痕今补上，续得签路又一章。』"
     )
@@ -1348,19 +1428,32 @@ async def handle_debug_fortune(bot: Bot, event: MessageEvent):
         )
     
     nickname = await get_nickname(bot, user_id, context="调试运势")
+    display_name = _format_titled_nickname(user_id, group_id, nickname)
     
     # 获取今日固定运势
     daily = get_daily_fortune(user_id, current_date())
     
     # 计算积分
     streak_count = get_current_streak(user_id, group_id)
-    score = calculate_fortune_score(daily["fortune_name"], streak_count, daily["special_event"])
+    title_bonus = roll_title_fortune_bonus(
+        user_id,
+        group_id,
+        current_date().strftime("%Y-%m-%d"),
+        get_points(user_id, group_id),
+    )
+    score = calculate_fortune_score(
+        daily["fortune_name"],
+        streak_count,
+        daily["special_event"],
+        title_bonus=title_bonus,
+    )
     special_text = score["special_text"]
+    title_power_text = score["title_power_text"]
     
     # 构建输出
     output = f"""🛠 【试签模式】今日运势签 🛠
 {'='*20}
-✦ {nickname} の运势 ✦
+✦ {display_name} の运势 ✦
 {'='*20}
 【运势】{daily['fortune_name']} {daily['emoji']}{special_text}
 【解读】{daily['desc']}
@@ -1376,7 +1469,7 @@ async def handle_debug_fortune(bot: Bot, event: MessageEvent):
 『{daily['poem']}』
 {'='*20}
 🔥 当前连续签到 {streak_count} 天（签路倍率 x{format_streak_multiplier(score['streak_multiplier'])}）
-💰 本次积分 {score['total_points']}（试签不入账）"""
+💰 本次积分 {score['total_points']}（试签不入账）{title_power_text}"""
 
     await debug_fortune.finish(output)
 

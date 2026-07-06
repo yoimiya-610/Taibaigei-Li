@@ -1,4 +1,7 @@
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageEvent, Bot, GroupMessageEvent
 from nonebot.params import CommandArg
@@ -23,18 +26,24 @@ HELP_ITEMS = (
     HelpItem("签到积分", "/称号 - 查看成就称号", 25),
     HelpItem("签到积分", "/称号说明 - 查看单个称号说明", 26),
     HelpItem("签到积分", "/排行榜 - 积分排行", 30),
+    HelpItem("签到积分", "/低保 - 低于100积分每日领100积分", 35),
 )
 COMMAND_ALIASES = (
-    "积分", "查积分", "我的积分",
+    "积分", "查积分", "我的积分", "查分", "余额", "我的余额",
     "称号", "成就", "成就称号", "称号列表",
     "称号说明", "成就说明",
     "佩戴称号", "更换称号", "戴称号", "卸下称号", "取消称号",
-    "排行榜", "积分排行", "积分榜", "富豪榜",
+    "排行榜", "排行", "积分排行", "积分榜", "富豪榜",
+    "低保", "领取低保", "低保领取",
 )
 
 
 # 积分数据文件路径
 POINTS_FILE = Path(__file__).resolve().parent.parent / "data" / "points.json"
+APP_TIMEZONE = ZoneInfo("Asia/Shanghai")
+LOW_INCOME_THRESHOLD = 100
+LOW_INCOME_REWARD = 100
+LOW_INCOME_DATE_FIELD = "last_low_income_date"
 
 # 确保数据目录存在
 POINTS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +59,11 @@ def save_points(data: dict):
 
 def _new_points_record(user_id: str, group_id: str) -> dict:
     return {"current": 0, "total": 0, "user_id": user_id, "group_id": group_id}
+
+
+def current_date_text() -> str:
+    return datetime.now(APP_TIMEZONE).date().isoformat()
+
 
 def get_points(user_id: str, group_id: str) -> dict:
     """获取用户积分"""
@@ -128,6 +142,32 @@ def refund_points(user_id: str, group_id: str, amount: int) -> dict:
 
     return mutate_json(POINTS_FILE, {}, mutator)
 
+
+def claim_low_income(user_id: str, group_id: str, today: str | None = None) -> dict:
+    """领取低保：当前积分低于阈值时每日固定入账一次。"""
+    key = f"{group_id}_{user_id}"
+    claim_date = today or current_date_text()
+
+    def mutator(data: dict) -> dict:
+        if key not in data:
+            data[key] = _new_points_record(user_id, group_id)
+
+        record = data[key]
+        if record.get(LOW_INCOME_DATE_FIELD) == claim_date:
+            return {"status": "already_claimed", "amount": 0, "record": dict(record)}
+
+        current = int(record.get("current", 0))
+        if current >= LOW_INCOME_THRESHOLD:
+            return {"status": "ineligible", "amount": 0, "record": dict(record)}
+
+        record["current"] = current + LOW_INCOME_REWARD
+        record["total"] = int(record.get("total", 0)) + LOW_INCOME_REWARD
+        record[LOW_INCOME_DATE_FIELD] = claim_date
+        return {"status": "claimed", "amount": LOW_INCOME_REWARD, "record": dict(record)}
+
+    return mutate_json(POINTS_FILE, {}, mutator)
+
+
 def get_group_ranking(group_id: str, limit: int = 10) -> list:
     """获取群组积分排行榜"""
     data = load_points()
@@ -142,8 +182,8 @@ def get_group_ranking(group_id: str, limit: int = 10) -> list:
                 "total": value.get("total", 0),
             })
     
-    # 按当前积分排序
-    group_users.sort(key=lambda x: x["current"], reverse=True)
+    # 按历史累计积分排序，当前积分只作为同累计时的辅助口径。
+    group_users.sort(key=lambda x: (x["total"], x["current"]), reverse=True)
     
     return group_users[:limit]
 
@@ -155,7 +195,7 @@ def _event_group_id(event: MessageEvent) -> str:
 
 
 # 查询积分命令
-check_points = on_command("积分", aliases={"查积分", "我的积分"}, priority=5, block=True)
+check_points = on_command("积分", aliases={"查积分", "我的积分", "查分", "余额", "我的余额"}, priority=5, block=True)
 
 @check_points.handle()
 async def handle_check_points(bot: Bot, event: MessageEvent):
@@ -186,7 +226,7 @@ async def handle_check_points(bot: Bot, event: MessageEvent):
         f"（翻开账本）让本猫看看你今日囊中几何。\n"
         f"{'='*20}\n"
         f"👤 用户：{nickname}\n"
-        f"🏷️ 称号：{title_info['title']}\n"
+        f"🏷️ 称号：{title_info['title']} [{title_info['rarity']}]\n"
         f"🎖️ 名号入册：{title_info['unlocked_count']}/{title_info['total_count']}\n"
         f"💎 当前积分：{points_info['current']}\n"
         f"📊 累计获得：{points_info['total']}\n"
@@ -310,8 +350,43 @@ async def handle_clear_title(event: MessageEvent):
     )
 
 
+low_income = on_command("低保", aliases={"领取低保", "低保领取"}, priority=5, block=True)
+
+
+@low_income.handle()
+async def handle_low_income(event: MessageEvent):
+    user_id = event.get_user_id()
+    group_id = _event_group_id(event)
+    result = claim_low_income(user_id, group_id)
+    record = result["record"]
+
+    if result["status"] == "claimed":
+        sync_user_titles(user_id, group_id, record)
+        await low_income.finish(
+            "（抖开袖中小账）见你囊中不足百，本猫添上 100 积分。\n"
+            f"当前积分：{record['current']}｜累计获得：{record['total']}\n"
+            "『薄酒也能添暖意，\n"
+            "小分暂解一时贫。\n"
+            "明朝若又风霜紧，\n"
+            "再来账前问本猫。』"
+        )
+
+    if result["status"] == "already_claimed":
+        await low_income.finish(
+            "（合上账本）今日低保已领过，明日再来。\n"
+            f"当前积分：{record['current']}\n"
+            "『一日一瓢清酒足，莫把小账翻成山。』"
+        )
+
+    await low_income.finish(
+        "（拨了拨算盘）你账上还不算窘，低保先留给不足百的诗友。\n"
+        f"当前积分：{record['current']}\n"
+        "『囊中尚有三分月，且让寒窗先得春。』"
+    )
+
+
 # 排行榜命令
-ranking = on_command("排行榜", aliases={"积分排行", "积分榜", "富豪榜"}, priority=5, block=True)
+ranking = on_command("排行榜", aliases={"排行", "积分排行", "积分榜", "富豪榜"}, priority=5, block=True)
 
 @ranking.handle()
 async def handle_ranking(bot: Bot, event: MessageEvent):
@@ -349,7 +424,7 @@ async def handle_ranking(bot: Bot, event: MessageEvent):
         else:
             medal = f"{i+1}."
         
-        rank_text.append(f"{medal} {nickname}：{user['current']} 积分")
+        rank_text.append(f"{medal} {nickname}：累计 {user['total']} 积分（现有 {user['current']}）")
     
     # 查找当前用户排名
     my_rank = None
@@ -358,17 +433,17 @@ async def handle_ranking(bot: Bot, event: MessageEvent):
     for i, user in enumerate(all_users):
         if user["user_id"] == user_id:
             my_rank = i + 1
-            my_points = user["current"]
+            my_points = user["total"]
             break
     
     my_rank_text = ""
     if my_rank:
-        my_rank_text = f"\n📍 你在第{my_rank}名（{my_points}积分）"
+        my_rank_text = f"\n📍 你在第{my_rank}名（累计 {my_points} 积分）"
 
     await ranking.finish(
         f"🏆 李太白给·积分排行榜 🏆\n"
         f"{'='*20}\n"
-        f"（展开金榜）诸位今日的身家，都写在这卷上了。\n"
+        f"（展开金榜）诸位一路攒下的总积分，都写在这卷上了。\n"
         f"{'='*20}\n"
         f"{chr(10).join(rank_text)}"
         f"{my_rank_text}\n"

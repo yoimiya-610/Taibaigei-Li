@@ -9,25 +9,42 @@ from nonebot.params import CommandArg
 
 from mybot.common.ai_client import is_configured, prompt_completion
 from mybot.common.charm import change_charm, get_group_charm_ranking
+from mybot.common.gift_store import (
+    GIFT_BY_ID,
+    GIFT_INVENTORY_FILE,
+    GIFT_NAME_INDEX,
+    GIFT_POOL,
+    add_gift_item,
+    consume_gift_item,
+    draw_daily_gift,
+    get_daily_gift_shop,
+    get_gift_inventory,
+    purchase_daily_shop_gift,
+    purchase_daily_shop_gifts,
+)
 from mybot.common.help_registry import HelpItem
 from mybot.common.json_store import mutate_json
 from mybot.common.logger import get_plugin_logger
+from mybot.common.titles import get_new_title_achievements, record_flight_cup_misgift, sync_user_titles
 from mybot.common.user_utils import get_nickname
 from mybot.plugins.points import add_points, get_points, refund_points, spend_points
 
 
 HELP_ITEMS = (
-    HelpItem("社交互动", "/礼物商城 - 查看礼物池与抽取规则", 5),
-    HelpItem("社交互动", "/抽礼物 - 每日100积分抽一份礼物", 6),
-    HelpItem("社交互动", "/背包 - 查看礼物库存", 7),
-    HelpItem("社交互动", "/送礼 - 从背包送出礼物", 8),
+    HelpItem("社交互动", "/礼物图鉴 - 查看礼物全册", 5),
+    HelpItem("社交互动", "/礼物商城 - 每日可购三件礼物", 6),
+    HelpItem("社交互动", "/购买 - 按编号或全部购入", 7),
+    HelpItem("社交互动", "/抽礼物 - 每日100积分抽一份礼物", 8),
+    HelpItem("社交互动", "/背包 - 查看礼物库存", 9),
+    HelpItem("社交互动", "/送礼 - 从背包送出礼物", 10),
     HelpItem("社交互动", "/送花 - 表达欣赏，10积分起", 10),
     HelpItem("社交互动", "/魅力榜 - 查看魅力排行", 15),
     HelpItem("社交互动", "/打赏 - 转赠积分，收取20%手续费", 20),
     HelpItem("社交互动", "/请喝酒 - 听酒中故事，20积分", 30),
 )
 COMMAND_ALIASES = (
-    "礼物商城", "礼物池", "商城",
+    "礼物图鉴", "礼物池", "图鉴",
+    "礼物商城", "购买", "购买礼物", "买礼物", "礼物购买",
     "抽礼物", "抽奖", "扭蛋", "礼物抽奖",
     "背包", "礼物背包",
     "送礼", "赠礼", "送礼物",
@@ -40,7 +57,6 @@ COMMAND_ALIASES = (
 logger = get_plugin_logger(__name__)
 
 FLOWER_GIFTS_FILE = Path(__file__).resolve().parent.parent / "data" / "flower_gifts.json"
-GIFT_INVENTORY_FILE = Path(__file__).resolve().parent.parent / "data" / "gift_inventory.json"
 DAILY_GIFT_DRAW_COST = 100
 FLOWER_TIERS = {
     10: {
@@ -140,130 +156,6 @@ DRINK_ALIASES = {
     "梅酒": "果酒",
     "桃花酒": "果酒",
 }
-GIFT_POOL = (
-    {
-        "id": "milk_tea",
-        "icon": "🧋",
-        "name": "云顶奶茶",
-        "rarity": "常见",
-        "weight": 16,
-        "other_charm": 18,
-        "self_charm": 8,
-        "summary": "甜口续命，适合给自己或群友回一口元气。",
-    },
-    {
-        "id": "rice_ball",
-        "icon": "🍙",
-        "name": "梅香饭团",
-        "rarity": "常见",
-        "weight": 16,
-        "other_charm": 14,
-        "self_charm": 0,
-        "summary": "小小一团，饱腹又暖心。",
-    },
-    {
-        "id": "pudding",
-        "icon": "🍮",
-        "name": "焦糖布丁",
-        "rarity": "常见",
-        "weight": 14,
-        "other_charm": 16,
-        "self_charm": 6,
-        "summary": "舀开便是甜意，常拿来安抚苦闷。",
-    },
-    {
-        "id": "candied_haw",
-        "icon": "🍡",
-        "name": "琥珀糖葫芦",
-        "rarity": "常见",
-        "weight": 12,
-        "other_charm": 15,
-        "self_charm": 0,
-        "summary": "一口脆响，最适合在群里逗人开心。",
-    },
-    {
-        "id": "fried_chicken",
-        "icon": "🍗",
-        "name": "脆皮鸡腿",
-        "rarity": "少见",
-        "weight": 9,
-        "other_charm": 24,
-        "self_charm": 0,
-        "summary": "香气横着走，适合投喂饥肠辘辘的群友。",
-    },
-    {
-        "id": "noodle_bowl",
-        "icon": "🍜",
-        "name": "热汤面",
-        "rarity": "少见",
-        "weight": 9,
-        "other_charm": 26,
-        "self_charm": 12,
-        "summary": "一碗热气下肚，连深夜都没那么冷。",
-    },
-    {
-        "id": "small_cake",
-        "icon": "🍰",
-        "name": "月光小蛋糕",
-        "rarity": "少见",
-        "weight": 8,
-        "other_charm": 28,
-        "self_charm": 10,
-        "summary": "适合庆祝，也适合无缘由地偏心一下。",
-    },
-    {
-        "id": "toy_bear",
-        "icon": "🧸",
-        "name": "抱抱熊",
-        "rarity": "少见",
-        "weight": 6,
-        "other_charm": 32,
-        "self_charm": 0,
-        "summary": "不顶饿，但很会哄人。",
-    },
-    {
-        "id": "vinyl_record",
-        "icon": "💿",
-        "name": "旧唱片",
-        "rarity": "稀有",
-        "weight": 4,
-        "other_charm": 38,
-        "self_charm": 0,
-        "summary": "转起来像一段旧月光，适合郑重地送人。",
-    },
-    {
-        "id": "star_lantern",
-        "icon": "🏮",
-        "name": "星灯小盏",
-        "rarity": "稀有",
-        "weight": 3,
-        "other_charm": 45,
-        "self_charm": 18,
-        "summary": "照人也照己，算是少数能给自己添魅力的好物。",
-    },
-    {
-        "id": "perfume",
-        "icon": "🫧",
-        "name": "风月香水",
-        "rarity": "稀有",
-        "weight": 2,
-        "other_charm": 52,
-        "self_charm": 20,
-        "summary": "一按便是满袖清风，送人自用都很体面。",
-    },
-    {
-        "id": "crown",
-        "icon": "👑",
-        "name": "鎏金小冠",
-        "rarity": "传说",
-        "weight": 1,
-        "other_charm": 66,
-        "self_charm": 0,
-        "summary": "稀罕物件，适合让人一夜之间风头正盛。",
-    },
-)
-GIFT_BY_ID = {item["id"]: item for item in GIFT_POOL}
-GIFT_NAME_INDEX = {item["name"]: item for item in GIFT_POOL}
 SELF_TARGET_ALIASES = ("自己", "本人", "给自己", "送自己")
 
 
@@ -326,158 +218,102 @@ DRINK_SYSTEM_PROMPT = """你是QQ群机器人“李太白给”，名叫耄耋�
 群友请你喝不同的酒时，你会依据酒的气质讲一则适合当下氛围的原创故事。
 故事要有画面、有起伏、有温度，保持文艺又亲近的语气，结尾必须附带一首用『』包裹的原创短诗。"""
 
-
-def _gift_inventory_key(group_id: str, user_id: str) -> str:
-    return f"{group_id}_{user_id}"
-
-
-def _gift_record(group_id: str, user_id: str) -> dict:
-    return {
-        "user_id": user_id,
-        "group_id": group_id,
-        "items": {},
-        "last_draw_date": "",
-        "last_draw_gift": "",
-    }
+def _format_charm_delta(amount: int) -> str:
+    return f"{amount:+d}"
 
 
-def _weighted_gift_draw(rng: random.Random | None = None) -> dict:
-    chooser = rng or random
-    return chooser.choices(
-        GIFT_POOL,
-        weights=[item["weight"] for item in GIFT_POOL],
-        k=1,
-    )[0]
+def _render_new_title_notice(title_status: dict | None) -> str:
+    if not title_status:
+        return ""
+
+    normal_new_titles = [achievement.title for achievement in get_new_title_achievements(title_status, hidden_only=False)]
+    hidden_new_titles = [achievement.title for achievement in get_new_title_achievements(title_status, hidden_only=True)]
+    lines = []
+    if normal_new_titles:
+        lines.append(f"✨ 新解锁称号：{'、'.join(normal_new_titles)}")
+    if hidden_new_titles:
+        lines.append(f"🎖 天外名号：{'、'.join(hidden_new_titles)} 已入册")
+    return "\n".join(lines)
 
 
 def _gift_menu_text() -> str:
     lines = [
-        "🎁 李太白给·礼物商城 🎁",
+        "🎁 李太白给·礼物图鉴 🎁",
         "=" * 22,
-        f"（掀开绸布）每日可花 {DAILY_GIFT_DRAW_COST} 积分抽一份礼物。",
-        "抽到的礼物会收入背包，可送给群友；部分礼物也能送给自己。",
+        "（掀开绸布）此册记着本猫袖中常备的礼物。",
+        "可抽、可买、可送，先看清模样再下手。",
         "=" * 22,
     ]
     for item in GIFT_POOL:
-        self_note = f"｜自用 +{item['self_charm']} 魅力" if item["self_charm"] > 0 else ""
-        lines.append(
-            f"{item['icon']} {item['name']} [{item['rarity']}] - 赠人 +{item['other_charm']} 魅力{self_note}"
-        )
+        price_note = f"｜售价 {item['shop_price']} 积分" if item.get("shop_price") else ""
+        lines.append(f"{item['icon']} {item['name']} [{item['rarity']}] - {item['summary']}{price_note}")
     lines.extend(
         [
             "=" * 22,
-            "指令：/抽礼物、/背包、/送礼 @某人 礼物名、/送礼 自己 礼物名",
+            f"指令：/礼物商城、/购买 1、/购买 全部、/抽礼物、/背包",
             "『袖里藏些小玩意，送人送己总关情。』",
         ]
     )
     return "\n".join(lines)
 
 
+def _render_daily_shop_text(group_id: str, user_id: str | None = None) -> str:
+    shop = get_daily_gift_shop(group_id, user_id)
+    purchased = set(shop.get("purchased_gift_ids", []))
+    lines = [
+        "🛍️ 李太白给·礼物商城 🛍️",
+        "=" * 22,
+        "（挑开帘子）今日本猫摆出三件小玩意，只卖这一轮。",
+        "三件礼物各可买 1 次，买定便收入背包。",
+        "=" * 22,
+    ]
+    for index, offer in enumerate(shop.get("offers", []), 1):
+        gift = offer["gift"]
+        self_note = f"｜自用 {_format_charm_delta(gift['self_charm'])}" if gift["self_charm"] > 0 else ""
+        sold_mark = "｜今日已购" if gift["id"] in purchased else ""
+        lines.append(
+            f"{index}. {gift['icon']} {gift['name']} [{gift['rarity']}] - {offer['price']} 积分｜赠人 {_format_charm_delta(gift['other_charm'])}{self_note}{sold_mark}"
+        )
+    lines.extend(
+        [
+            "=" * 22,
+            "购买：/购买 1、/购买 2、/购买 3、/购买 全部",
+            "『今日摊前三样巧，看中心意便成交。』",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _select_shop_offer(shop: dict, selector: str) -> dict | None:
+    text = selector.strip()
+    if text in {"1", "2", "3"}:
+        index = int(text) - 1
+        offers = shop.get("offers", [])
+        if 0 <= index < len(offers):
+            return offers[index]
+        return None
+
+    gift = _resolve_gift_name(text)
+    if not gift:
+        return None
+    return next((offer for offer in shop.get("offers", []) if offer["gift"]["id"] == gift["id"]), None)
+
+
 def _inventory_summary(record: dict) -> str:
     items = record.get("items", {})
     if not isinstance(items, dict) or not items:
-        return "（翻空锦囊）背包里还没有礼物，先去礼物商城碰碰手气吧。"
+        return "（翻空锦囊）背包里还没有礼物，先去礼物商城逛逛，或抽礼物碰碰手气吧。"
 
     lines = []
     for item in GIFT_POOL:
         quantity = int(items.get(item["id"], 0))
         if quantity <= 0:
             continue
-        self_note = f"｜自用 +{item['self_charm']}" if item["self_charm"] > 0 else ""
+        self_note = f"｜自用 {_format_charm_delta(item['self_charm'])}" if item["self_charm"] > 0 else ""
         lines.append(
-            f"{item['icon']} {item['name']} x{quantity}｜赠人 +{item['other_charm']}{self_note}"
+            f"{item['icon']} {item['name']} x{quantity}｜赠人 {_format_charm_delta(item['other_charm'])}{self_note}"
         )
-    return "\n".join(lines) if lines else "（翻空锦囊）背包里还没有礼物，先去礼物商城碰碰手气吧。"
-
-
-def get_gift_inventory(user_id: str, group_id: str) -> dict:
-    key = _gift_inventory_key(group_id, user_id)
-
-    def mutator(data: dict) -> dict:
-        inventories = data.setdefault("inventories", {})
-        record = inventories.setdefault(key, _gift_record(group_id, user_id))
-        record.setdefault("items", {})
-        record.setdefault("last_draw_date", "")
-        record.setdefault("last_draw_gift", "")
-        return {
-            "user_id": record["user_id"],
-            "group_id": record["group_id"],
-            "items": dict(record.get("items", {})),
-            "last_draw_date": record.get("last_draw_date", ""),
-            "last_draw_gift": record.get("last_draw_gift", ""),
-        }
-
-    return mutate_json(GIFT_INVENTORY_FILE, {}, mutator)
-
-
-def draw_daily_gift(user_id: str, group_id: str, *, now: datetime | None = None, rng: random.Random | None = None) -> dict:
-    current = now or datetime.now()
-    today = current.strftime("%Y-%m-%d")
-    selected = _weighted_gift_draw(rng)
-    key = _gift_inventory_key(group_id, user_id)
-
-    def mutator(data: dict) -> dict:
-        inventories = data.setdefault("inventories", {})
-        record = inventories.setdefault(key, _gift_record(group_id, user_id))
-        record.setdefault("items", {})
-        if record.get("last_draw_date") == today:
-            return {
-                "status": "already_drawn",
-                "gift_id": record.get("last_draw_gift", ""),
-            }
-        record["last_draw_date"] = today
-        record["last_draw_gift"] = selected["id"]
-        record["items"][selected["id"]] = int(record["items"].get(selected["id"], 0)) + 1
-        return {
-            "status": "ok",
-            "gift_id": selected["id"],
-            "quantity": int(record["items"][selected["id"]]),
-        }
-
-    result = mutate_json(GIFT_INVENTORY_FILE, {}, mutator)
-    if result.get("status") == "ok":
-        result["gift"] = GIFT_BY_ID[selected["id"]]
-    else:
-        drawn_id = result.get("gift_id", "")
-        result["gift"] = GIFT_BY_ID.get(drawn_id)
-    return result
-
-
-def consume_gift_item(user_id: str, group_id: str, gift_id: str) -> dict:
-    key = _gift_inventory_key(group_id, user_id)
-
-    def mutator(data: dict) -> dict:
-        inventories = data.setdefault("inventories", {})
-        record = inventories.setdefault(key, _gift_record(group_id, user_id))
-        record.setdefault("items", {})
-        quantity = int(record["items"].get(gift_id, 0))
-        if quantity <= 0:
-            return {"status": "missing", "quantity": 0}
-        if quantity == 1:
-            record["items"].pop(gift_id, None)
-            return {"status": "ok", "quantity": 0}
-        record["items"][gift_id] = quantity - 1
-        return {"status": "ok", "quantity": quantity - 1}
-
-    return mutate_json(GIFT_INVENTORY_FILE, {}, mutator)
-
-
-def add_gift_item(user_id: str, group_id: str, gift_id: str, amount: int = 1) -> dict:
-    key = _gift_inventory_key(group_id, user_id)
-
-    def mutator(data: dict) -> dict:
-        inventories = data.setdefault("inventories", {})
-        record = inventories.setdefault(key, _gift_record(group_id, user_id))
-        record.setdefault("items", {})
-        record["items"][gift_id] = int(record["items"].get(gift_id, 0)) + amount
-        if record["items"][gift_id] <= 0:
-            record["items"].pop(gift_id, None)
-            return {"quantity": 0}
-        return {"quantity": int(record["items"][gift_id])}
-
-    return mutate_json(GIFT_INVENTORY_FILE, {}, mutator)
-
-
+    return "\n".join(lines) if lines else "（翻空锦囊）背包里还没有礼物，先去礼物商城逛逛，或抽礼物碰碰手气吧。"
 def _resolve_gift_name(raw_text: str) -> dict | None:
     text = raw_text.strip()
     if not text:
@@ -596,13 +432,177 @@ def calculate_tip_distribution(amount: int) -> tuple[int, int]:
     return fee, amount - fee
 
 
+# 礼物图鉴
+gift_catalog = on_command("礼物图鉴", aliases={"礼物池", "图鉴"}, priority=5, block=True)
+
+
+@gift_catalog.handle()
+async def handle_gift_catalog():
+    await gift_catalog.finish(_gift_menu_text())
+
+
 # 礼物商城
-gift_shop = on_command("礼物商城", aliases={"礼物池", "商城"}, priority=5, block=True)
+gift_shop = on_command("礼物商城", aliases=set(), priority=5, block=True)
 
 
 @gift_shop.handle()
-async def handle_gift_shop():
-    await gift_shop.finish(_gift_menu_text())
+async def handle_gift_shop(event: MessageEvent):
+    if not isinstance(event, GroupMessageEvent):
+        await gift_shop.finish(
+            "（拢起摊布）礼物商城按群分开摆，请到群里来逛。\n"
+            "『一摊小物分群设，入席方知价与香。』"
+        )
+
+    await gift_shop.finish(_render_daily_shop_text(str(event.group_id)))
+
+
+# 购买礼物
+buy_gift_cmd = on_command("购买", aliases={"购买礼物", "买礼物", "礼物购买"}, priority=5, block=True)
+
+
+@buy_gift_cmd.handle()
+async def handle_buy_gift(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+    if not isinstance(event, GroupMessageEvent):
+        await buy_gift_cmd.finish(
+            "（按住价签）礼物买卖要按群记账，请到群里来挑。\n"
+            "『银钱往来须有处，入群方好定新价。』"
+        )
+
+    group_id = str(event.group_id)
+    user_id = event.get_user_id()
+    raw_text = args.extract_plain_text().strip()
+    shop = get_daily_gift_shop(group_id, user_id)
+    if not raw_text:
+        await buy_gift_cmd.finish(
+            f"{_render_daily_shop_text(group_id, user_id)}\n"
+            "（敲了敲木牌）看中哪件，就用 /购买 1、/购买 2、/购买 3，或 /购买 全部。\n"
+            "『欲买先将牌号报，免教错把别枝挑。』"
+        )
+
+    if raw_text == "全部":
+        purchased_ids = set(shop.get("purchased_gift_ids", []))
+        remaining_offers = [offer for offer in shop.get("offers", []) if offer["gift"]["id"] not in purchased_ids]
+        if not remaining_offers:
+            await buy_gift_cmd.finish(
+                "（合上摊布）今日这三样你都已收下，明朝再来挑新货吧。\n"
+                "『今朝小摊都买尽，只待明晨换新香。』"
+            )
+
+        total_price = sum(int(offer["price"]) for offer in remaining_offers)
+        points = get_points(user_id, group_id)
+        if points["current"] < total_price:
+            await buy_gift_cmd.finish(
+                f"（拨了拨钱袋）剩下 {len(remaining_offers)} 件一共要 {total_price} 积分，你目前只有 {points['current']} 积分。\n"
+                "先攒够银钱，再来一口气包圆吧。\n"
+                "『想把三枝同袖带，囊中先得有余声。』"
+            )
+
+        if not spend_points(user_id, group_id, total_price):
+            await buy_gift_cmd.finish(
+                "（翻账本）今日这几笔礼账一时记不上，请稍后再试。\n"
+                "『账页偶逢风作乱，稍停片刻再成交。』"
+            )
+
+        try:
+            result = purchase_daily_shop_gifts(
+                user_id,
+                group_id,
+                [offer["gift"]["id"] for offer in remaining_offers],
+            )
+        except Exception as exc:
+            refund_points(user_id, group_id, total_price)
+            logger.exception(f"礼物商城批量购买写入失败 user_id={user_id} group_id={group_id}: {exc}")
+            await buy_gift_cmd.finish(
+                f"（按住木匣）这一摊买卖刚落笔就被风吹乱，本猫已退回 {total_price} 积分。\n"
+                "『满摊欲尽风先扰，钱已归囊且再寻。』"
+            )
+
+        if result["status"] != "ok":
+            refund_points(user_id, group_id, total_price)
+            await buy_gift_cmd.finish(
+                f"（拢住货签）这一摊买卖没能成交，本猫已退回 {total_price} 积分。\n"
+                "请先重看 /礼物商城 的当日货单。\n"
+                "『摊前货色随朝换，且照新牌再下钱。』"
+            )
+
+        nickname = await get_nickname(bot, user_id, context="购买礼物.全部")
+        lines = [
+            "🛍️ 李太白给·一口气包圆 🛍️",
+            "=" * 22,
+            f"（收了银钱）{nickname} 今日把摊前余下几件一并买走：",
+        ]
+        for item in result.get("results", []):
+            gift = item["gift"]
+            lines.append(f"{gift['icon']} {gift['name']} [{gift['rarity']}] - {item['price']} 积分｜库存 {item['quantity']} 件")
+        lines.extend(
+            [
+                "=" * 22,
+                f"合计花费：{result['price']} 积分",
+                "『一摊星月收入袖，改日拣香赠故人。』",
+            ]
+        )
+        await buy_gift_cmd.finish("\n".join(lines))
+
+    offer = _select_shop_offer(shop, raw_text)
+    if not offer:
+        await buy_gift_cmd.finish(
+            f"{_render_daily_shop_text(group_id, user_id)}\n"
+            "（摊开今日货签）请输入 `/购买 1`、`/购买 2`、`/购买 3`，也可用礼物名或 `/购买 全部`。\n"
+            "『牌号若明成交快，莫教错认别枝香。』"
+        )
+
+    gift = offer["gift"]
+    points = get_points(user_id, group_id)
+    if points["current"] < offer["price"]:
+        await buy_gift_cmd.finish(
+            f"（拨了拨钱袋）{gift['icon']} {gift['name']} 今日作价 {offer['price']} 积分，你目前只有 {points['current']} 积分。\n"
+            "『囊中若少三分响，且等来时再换香。』"
+        )
+
+    if not spend_points(user_id, group_id, offer["price"]):
+        await buy_gift_cmd.finish(
+            "（翻账本）今日这笔礼账一时记不上，请稍后再试。\n"
+            "『账页偶逢风作乱，稍停片刻再成交。』"
+        )
+
+    try:
+        result = purchase_daily_shop_gift(user_id, group_id, gift["id"])
+    except Exception as exc:
+        refund_points(user_id, group_id, offer["price"])
+        logger.exception(f"礼物商城购买写入失败 user_id={user_id} group_id={group_id} gift={gift['id']}: {exc}")
+        await buy_gift_cmd.finish(
+            f"（按住木匣）这笔买卖刚落笔就被风吹乱，本猫已退回 {offer['price']} 积分。\n"
+            "『买卖未成钱已返，且等风稳再来寻。』"
+        )
+
+    if result["status"] != "ok":
+        refund_points(user_id, group_id, offer["price"])
+        if result["status"] == "already_purchased":
+            bought = result.get("gift")
+            bought_text = f"今日已买过 {bought['icon']} {bought['name']}。" if bought else "这件礼物你今日已经买过了。"
+            await buy_gift_cmd.finish(
+                f"（按住你的钱袋）{bought_text}\n"
+                "本猫已把这笔积分原样退回。\n"
+                "『同枝今日休重折，换看旁香也可亲。』"
+            )
+        await buy_gift_cmd.finish(
+            f"（摊开货签）{gift['icon']} {gift['name']} 今日不在售，本猫已退回 {offer['price']} 积分。\n"
+            "请先看 /礼物商城 的当日货单。\n"
+            "『摊前货色随朝换，且照新牌再下钱。』"
+        )
+
+    nickname = await get_nickname(bot, user_id, context="购买礼物")
+    await buy_gift_cmd.finish(
+        f"🛍️ 李太白给·成交一件 🛍️\n"
+        f"{'='*22}\n"
+        f"（收了银钱）{nickname} 买下了：\n"
+        f"{gift['icon']} {gift['name']} [{gift['rarity']}]\n"
+        f"{gift['summary']}\n"
+        f"作价：{result['price']} 积分\n"
+        f"背包库存：{result['quantity']} 件\n"
+        f"{'='*22}\n"
+        "『今日挑得心头物，且向人间赠月光。』"
+    )
 
 
 # 每日抽礼物
@@ -613,7 +613,7 @@ draw_gift_cmd = on_command("抽礼物", aliases={"抽奖", "扭蛋", "礼物抽�
 async def handle_draw_gift(bot: Bot, event: MessageEvent):
     if not isinstance(event, GroupMessageEvent):
         await draw_gift_cmd.finish(
-            "（捂住抽奖匣）礼物商城按群积分开张，请到群里来抽。\n"
+            "（捂住抽奖匣）抽礼要按群积分开张，请到群里来抽。\n"
             "『独坐难开百样铺，入群方见满箱春。』"
         )
 
@@ -660,8 +660,8 @@ async def handle_draw_gift(bot: Bot, event: MessageEvent):
         f"（抖开锦囊）{nickname} 今日抽中了：\n"
         f"{gift['icon']} {gift['name']} [{gift['rarity']}]\n"
         f"{gift['summary']}\n"
-        f"赠予群友：+{gift['other_charm']} 魅力\n"
-        f"{'可送自己：+' + str(gift['self_charm']) + ' 魅力' if gift['self_charm'] > 0 else '这件礼物更适合送给别人。'}\n"
+        f"赠予群友：{_format_charm_delta(gift['other_charm'])} 魅力\n"
+        f"{'可送自己：' + _format_charm_delta(gift['self_charm']) + ' 魅力' if gift['self_charm'] > 0 else '这件礼物更适合送给别人。'}\n"
         f"背包库存：{result['quantity']} 件\n"
         f"（已消耗 {DAILY_GIFT_DRAW_COST} 积分）\n"
         f"{'='*22}\n"
@@ -759,16 +759,30 @@ async def handle_send_gift(bot: Bot, event: MessageEvent, args: Message = Comman
             "『礼到半途风作梗，待云散尽再相传。』"
         )
 
+    if gift["id"] == "flight_cup" and target_id != user_id:
+        title_status = None
+        try:
+            record_flight_cup_misgift(user_id, group_id)
+            title_status = sync_user_titles(user_id, group_id, get_points(user_id, group_id))
+        except Exception as exc:
+            logger.exception(
+                f"✈杯隐藏成就记录失败 sender={user_id} target={target_id} group_id={group_id}: {exc}"
+            )
+    else:
+        title_status = None
+
     sender_name = await get_nickname(bot, user_id, context="送礼.sender")
     target_name = await get_nickname(bot, target_id, context="送礼.target")
     remain_text = f"背包余量：{consume_result['quantity']} 件"
     action_text = "自己收下" if target_id == user_id else f"送给了 {target_name}"
+    new_title_text = _render_new_title_notice(title_status)
     await send_gift_cmd.finish(
         f"{gift['icon']} {gift['name']} 已送达\n"
         f"{'='*22}\n"
         f"（理了理缎带）{sender_name} 把 {gift['name']} {action_text}。\n"
-        f"{target_name if target_id != user_id else sender_name} 魅力值 +{charm_gain}\n"
+        f"{target_name if target_id != user_id else sender_name} 魅力值 {_format_charm_delta(charm_gain)}\n"
         f"{remain_text}\n"
+        f"{new_title_text + chr(10) if new_title_text else ''}"
         f"{'='*22}\n"
         f"『礼轻也可摇星色，送到心头便有光。』"
     )
