@@ -1,29 +1,36 @@
-# 李太白给
+# 李太白给 Python 包
 
-耄耋是一只穿唐装、戴墨镜、提酒壶的群聊猫诗人，基于 NoneBot2 与 OneBot v11。
+本目录包含李太白给 v0.7.0 的 NoneBot2 应用、共享模块、插件和测试。仓库根目录是推荐的命令执行位置。
 
-## 启动
+## 启动入口
 
-在包含 `mybot/` 的发布目录根目录执行：
-
-```powershell
-uv sync --project mybot
+```bash
+uv sync --project mybot --locked
 uv run --project mybot li-taibaigei
 ```
 
-也可用标准模块入口启动：
+也可以使用模块入口：
 
-```powershell
+```bash
 uv run --project mybot python -m mybot.main
 ```
 
-首次运行前，将 `mybot/.env.example` 复制为 `mybot/.env`，填入自己的 API Key、连接配置、管理员 QQ 号和群号。`DAILY_GREET_GROUPS` 留空时不会发送定时早晚安问候。运行数据会保存在 `mybot/data/`，备份会保存在根目录 `backups/`；这些运行产物均不应提交到 Git。
+启动前将 `mybot/.env.example` 复制为 `mybot/.env`，并按 [配置参考](../docs/configuration.md) 填写本地值。AI 密钥、管理员 ID 和定时问候群组均可留空；OneBot V11 连接仍需在协议端完成配置。
 
-历史小游戏源码会随发布包保留，但默认关闭；管理员可通过功能开关启用。
+## 目录
 
-## 开发校验
+- `common/`：配置、存储、权限、AI 客户端和共享业务逻辑。
+- `plugins/`：默认加载的功能。
+- `plugins_disabled/`：默认关闭、可由管理员启用的历史小游戏。
+- `tests/`：完整单元测试。
+- `data/`、`logs/`：运行时生成，禁止提交。
 
-```powershell
+系统管理员由 `BOT_ADMINS` 或 NoneBot `SUPERUSERS` 配置。群主和群管理员只能管理所在群的群级功能开关。
+
+## 开发验证
+
+```bash
 uv run --project mybot python -m compileall mybot/bot.py mybot/main.py mybot/common mybot/plugins mybot/plugins_disabled mybot/tests
 uv run --project mybot python -m unittest discover -s mybot/tests -v
+uv run --project mybot python -c "import mybot.bot; print('plugins-loaded')"
 ```

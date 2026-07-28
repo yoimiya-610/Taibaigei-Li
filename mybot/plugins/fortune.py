@@ -887,6 +887,67 @@ JI_ITEMS = [
     "诋毁悠依米亚"
 ]
 
+
+def _expand_unique_items(base_items: list[str], additions: list[str], target_count: int = 500) -> list[str]:
+    seen = set()
+    expanded = []
+    for item in [*base_items, *additions]:
+        text = str(item).strip()
+        if text and text not in seen:
+            expanded.append(text)
+            seen.add(text)
+        if len(expanded) >= target_count:
+            return expanded
+    raise ValueError(f"fortune item pool only has {len(expanded)} unique items, expected {target_count}")
+
+
+YI_ITEM_ADDITIONS = [
+    f"{verb}{target}"
+    for verb in ("整理", "检查", "备好", "擦亮", "收好", "翻看", "写下", "完成", "预约", "确认")
+    for target in (
+        "证件", "钥匙串", "随身药", "充电线", "电脑桌", "书桌角落", "明日行程", "待办清单", "账单日期", "快递地址",
+        "会议提醒", "课程笔记", "健身计划", "饮水杯", "雨具", "耳机盒", "眼镜布", "门禁卡", "停车位置", "返程路线",
+    )
+] + [
+    f"{verb}{target}"
+    for verb in ("练习", "温习", "复盘", "记录", "打磨", "校对", "保存", "整理", "分享", "收藏")
+    for target in (
+        "一段代码", "一页笔记", "一首旧歌", "一张草图", "一份方案", "一个灵感", "一段台词", "一条金句", "一份简历", "一篇文章",
+    )
+] + [
+    f"{verb}{target}"
+    for verb in ("慢慢", "认真", "轻轻", "及时", "主动", "坦白", "温柔", "耐心", "稳稳", "大方")
+    for target in (
+        "表达心意", "说明边界", "回复消息", "请教问题", "提出需求", "接受夸奖", "承认辛苦", "拥抱变化", "整理情绪", "放过自己",
+    )
+]
+
+JI_ITEM_ADDITIONS = [
+    f"{prefix}{target}"
+    for prefix in ("忘记", "随手丢下", "拖到最后", "不核对", "不备份", "不确认", "乱改", "误删", "错过", "弄丢")
+    for target in (
+        "证件", "钥匙串", "随身药", "充电线", "电脑桌", "书桌角落", "明日行程", "待办清单", "账单日期", "快递地址",
+        "会议提醒", "课程笔记", "健身计划", "饮水杯", "雨具", "耳机盒", "眼镜布", "门禁卡", "停车位置", "返程路线",
+    )
+] + [
+    f"{prefix}{target}"
+    for prefix in ("硬撑着", "赌气去", "急着", "反复", "偷偷", "随便", "临时", "熬夜", "带火气", "没想清就")
+    for target in (
+        "改方案", "发长文", "做决定", "删记录", "换计划", "提离职", "下结论", "开新坑", "约见面", "买大件",
+    )
+] + [
+    f"{prefix}{target}"
+    for prefix in ("把", "让", "拿", "用", "借", "靠", "等", "催", "逼", "骗")
+    for target in (
+        "小事拖成大事", "情绪当成证据", "玩笑压过分寸", "面子盖过安全", "侥幸替代计划",
+        "沉默冒充体面", "冲动冒充勇敢", "忙碌冒充进步", "截图代替沟通", "酒劲代替胆量",
+    )
+]
+
+YI_ITEMS = _expand_unique_items(YI_ITEMS, YI_ITEM_ADDITIONS)
+JI_ITEMS = _expand_unique_items(JI_ITEMS, JI_ITEM_ADDITIONS)
+
+
 def get_daily_fortune(user_id: str, fortune_date: date | None = None):
     """根据用户ID和日期生成固定的每日运势（全局一致）"""
     fortune_date = fortune_date or current_date()
@@ -1080,8 +1141,7 @@ def _render_streak_status(record: dict) -> str:
     if record.get("streak_repaired_by_makeup"):
         return f"🔥 连续签到 {streak_count} 天（补签已续上，今日积分按原签入账）"
 
-    multiplier = int(record.get("streak_multiplier", 10))
-    return f"🔥 连续签到 {streak_count} 天（签路倍率 x{format_streak_multiplier(multiplier)}）"
+    return f"🔥 连续签到 {streak_count} 天"
 
 
 def _render_full_fortune(
@@ -1358,7 +1418,7 @@ async def handle_makeup(bot: Bot, event: MessageEvent):
     pending_makeups.pop(pending_key, None)
     if not spend_points(user_id, group_id, cost):
         await makeup.finish(
-            "（算盘一停）积分扣除失败，请重新查看后再试。\n"
+            "（算盘一停）这笔补签墨资暂时落不了账，请重新查看后再试。\n"
             "『算盘偶有珠声乱，稍候重来墨自安。』"
         )
 
@@ -1468,7 +1528,7 @@ async def handle_debug_fortune(bot: Bot, event: MessageEvent):
 
 『{daily['poem']}』
 {'='*20}
-🔥 当前连续签到 {streak_count} 天（签路倍率 x{format_streak_multiplier(score['streak_multiplier'])}）
+🔥 当前连续签到 {streak_count} 天
 💰 本次积分 {score['total_points']}（试签不入账）{title_power_text}"""
 
     await debug_fortune.finish(output)

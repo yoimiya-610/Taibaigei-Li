@@ -1,5 +1,5 @@
 from nonebot import on_message
-from nonebot.adapters.onebot.v11 import MessageEvent
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent
 from nonebot.rule import Rule
 
 from mybot.common.feature_flags import is_feature_enabled
@@ -11,7 +11,8 @@ COMMAND_ALIASES = tuple(BLACKLIST_WORDS)
 
 def check_blacklist(event: MessageEvent) -> bool:
     """只检查普通文本中的违禁词，不让命令参数或 @ 昵称触发。"""
-    if not is_feature_enabled("blacklist"):
+    group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
+    if not is_feature_enabled("blacklist", group_id):
         return False
 
     msg = get_message_text(event)

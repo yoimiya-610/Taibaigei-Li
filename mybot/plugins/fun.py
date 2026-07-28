@@ -43,7 +43,7 @@ SYSTEM_PROMPT = """你是"李太白给"，一只名为耄耋的猫猫头，喜�
 
 # API出错文案
 ERROR_MESSAGES = [
-    "（扶额）本猫的脑子好像宕机了...容本猫缓缓，稍后再来~",
+    "（扶额）本猫脑中墨线打了个结...容本猫缓缓，稍后再来~",
     "（揉太阳穴）哎呀，本猫今日诗兴不佳，改日再来吧~",
     "（打哈欠）本猫困了，让本猫休息一下再说...",
     "（晃酒壶）本猫喝多了，脑子转不动了，稍等片刻~",
@@ -363,7 +363,7 @@ def _hexagram_posture(cast: dict) -> str:
 
 def _answer_question(question: str, cast: dict) -> str:
     focus, hint = _question_focus(question)
-    return f"模糊回答：若问{focus}，本猫看是——{_hexagram_posture(cast)}{hint}"
+    return f"本猫建议你：若问{focus}，先按此断——{_hexagram_posture(cast)}{hint}"
 
 
 def render_normal_divination(question: str, nickname: str, rng=random) -> str:
@@ -449,7 +449,7 @@ async def _charge_points_or_finish(matcher, event: MessageEvent, cost: int) -> t
         await matcher.finish(_insufficient_points_message(cost, points["current"]))
     if not spend_points(user_id, group_id, cost):
         await matcher.finish(
-            "（算盘一停）这笔积分暂时扣不上，请稍后再试。\n"
+            "（算盘一停）这笔开坛墨资暂时落不了账，请稍后再试。\n"
             "『账页偶逢风作乱，待墨痕干再开坛。』"
         )
     return user_id, group_id

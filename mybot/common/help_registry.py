@@ -18,9 +18,11 @@ CATEGORY_META = {
     "趣味功能": {"icon": "🎭", "order": 30, "flavor": "若想解闷寻笑，这一栏最会挑动兴致。"},
     "签到积分": {"icon": "📊", "order": 40, "flavor": "账本、名号、签到，都在这卷里慢慢翻。"},
     "社交互动": {"icon": "🎁", "order": 50, "flavor": "人情往来最讲究分寸，本猫替你把场面撑住。"},
-    "小游戏": {"icon": "🎮", "order": 60, "flavor": "旧局新翻，图个热闹，莫把得失看得太重。"},
-    "AI对话": {"icon": "💬", "order": 70, "flavor": "若有难题或心事，不妨与本猫对坐一谈。"},
-    "系统说明": {"icon": "ℹ️", "order": 80, "flavor": "此处是门牌与路引，先认清本猫，再慢慢常来。"},
+    "太白酒馆": {"icon": "🍶", "order": 60, "flavor": "酒钱入壶，签局开桌；往后酒馆里的新玩法，也都从这卷账上走。"},
+    "小游戏": {"icon": "🎮", "order": 65, "flavor": "旧局新翻，图个热闹，莫把得失看得太重。"},
+    "实用功能": {"icon": "🧰", "order": 70, "flavor": "翻译、总结、润色、解释，案头小事交给本猫磨一磨。"},
+    "AI对话": {"icon": "💬", "order": 80, "flavor": "若有难题或心事，不妨与本猫对坐一谈。"},
+    "系统说明": {"icon": "ℹ️", "order": 90, "flavor": "此处是门牌与路引，先认清本猫，再慢慢常来。"},
 }
 
 
@@ -41,7 +43,7 @@ def _module_help_items(module: ModuleType) -> list[HelpItem]:
     return items
 
 
-def collect_help_items() -> list[tuple[str, int, HelpItem]]:
+def collect_help_items(group_id: str | int | None = None) -> list[tuple[str, int, HelpItem]]:
     collected = []
     for module_name, module in list(sys.modules.items()):
         if module_name.removeprefix("mybot.").startswith("plugins_disabled."):
@@ -49,16 +51,16 @@ def collect_help_items() -> list[tuple[str, int, HelpItem]]:
         feature = module_feature_key(module_name)
         if not feature:
             continue
-        if not is_feature_enabled(feature):
+        if not is_feature_enabled(feature, group_id):
             continue
         for index, item in enumerate(_module_help_items(module)):
             collected.append((module_name, index, item))
     return collected
 
 
-def render_help_menu() -> str:
+def render_help_menu(group_id: str | int | None = None) -> str:
     grouped: dict[str, list[tuple[str, int, HelpItem]]] = {}
-    for module_name, index, item in collect_help_items():
+    for module_name, index, item in collect_help_items(group_id):
         grouped.setdefault(item.category, []).append((module_name, index, item))
 
     lines = [
@@ -102,9 +104,9 @@ def render_help_menu() -> str:
     return "\n".join(lines)
 
 
-def render_category_help(category: str) -> str | None:
+def render_category_help(category: str, group_id: str | int | None = None) -> str | None:
     grouped: dict[str, list[tuple[str, int, HelpItem]]] = {}
-    for module_name, index, item in collect_help_items():
+    for module_name, index, item in collect_help_items(group_id):
         grouped.setdefault(item.category, []).append((module_name, index, item))
 
     if category not in grouped:

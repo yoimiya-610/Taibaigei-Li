@@ -138,7 +138,7 @@ async def handle_paid_chat(matcher, cost: int, bot: Bot, event: MessageEvent, ar
         )
 
     if not spend_points(user_id, group_id, cost):
-        await matcher.finish("（扶额）扣除积分失败，请稍后再试。")
+        await matcher.finish("（算盘一停）这笔酒资暂时落不了账，请稍后再试。")
 
     nickname = await get_nickname(bot, user_id, context=tier["name"])
     await matcher.send(

@@ -57,7 +57,7 @@ class FunPaidInteractionsTest(unittest.TestCase):
         self.assertIn("初爻：背背背=9", text)
         self.assertIn("本卦：第1卦 乾为天", text)
         self.assertIn("变卦：第2卦 坤为地", text)
-        self.assertIn("模糊回答：", text)
+        self.assertIn("本猫建议你：", text)
         self.assertIn("消耗 100 积分", text)
 
     def test_normal_divination_renders_compact_result(self):
@@ -67,7 +67,7 @@ class FunPaidInteractionsTest(unittest.TestCase):
         self.assertIn("档位：随便算算", text)
         self.assertIn("消耗 20 积分", text)
         self.assertIn("卦象：第", text)
-        self.assertIn("模糊回答：若问偷闲摸鱼", text)
+        self.assertIn("本猫建议你：若问偷闲摸鱼", text)
 
     def test_paid_ai_prompts_keep_user_content(self):
         mad_prompt = fun._build_mad_prompt("阿甲", "上班")

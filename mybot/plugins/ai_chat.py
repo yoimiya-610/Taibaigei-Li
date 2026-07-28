@@ -170,7 +170,8 @@ ai_chat = on_message(rule=to_me(), priority=99, block=False)
 
 @ai_chat.handle()
 async def handle_ai_chat(event: MessageEvent):
-    if not is_feature_enabled("ai_chat"):
+    group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
+    if not is_feature_enabled("ai_chat", group_id):
         await ai_chat.finish(ensure_ending_poem("（合上折扇）本猫今夜暂不接话，待灯火重明再叙。"))
 
     msg = event.get_plaintext().strip()
@@ -221,7 +222,8 @@ ai_random = on_message(priority=100, block=False)
 
 @ai_random.handle()
 async def handle_random(event: MessageEvent):
-    if not is_feature_enabled("ai_chat"):
+    group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
+    if not is_feature_enabled("ai_chat", group_id):
         return
 
     if event.is_tome():

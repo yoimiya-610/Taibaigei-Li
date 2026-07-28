@@ -100,6 +100,7 @@ ACHIEVEMENTS = (
     TitleAchievement("secret_fame_three_firsts", "三月风云主", "秘闻", "三月魁首", "monthly_fame_first_count", 3, "三次登临月榜榜首", 9090, True),
     TitleAchievement("secret_slot_grape", "青藤摘星手", "秘闻", "青藤摘星", "slot_grape_or_better_count", 1, "图案转盘转出过葡萄三连或更高奖面", 9100, True),
     TitleAchievement("secret_flight_cup_misgift", "起飞失败", "秘闻", "起飞失败", "flight_cup_misgift_count", 1, "把✈杯送给别人一次", 9110, True),
+    TitleAchievement("secret_china_captain", "中国机长", "秘闻", "风正起飞", "fortune_flight_success", 1, "今日宜起飞时成功使用 /起飞", 9120, True),
 )
 
 ALL_TITLES = (DEFAULT_TITLE,) + ACHIEVEMENTS

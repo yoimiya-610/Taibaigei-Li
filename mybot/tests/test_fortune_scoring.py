@@ -144,6 +144,7 @@ class FortuneScoringTest(unittest.TestCase):
         rendered = fortune._render_full_fortune("测试群友", saved_record)
         self.assertIn("连续签到 23 天", rendered)
         self.assertIn("补签已续上", rendered)
+        self.assertNotIn("签路倍率", rendered)
 
     def test_add_points_once_is_idempotent(self):
         old_points_file = points.POINTS_FILE

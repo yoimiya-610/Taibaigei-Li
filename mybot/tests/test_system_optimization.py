@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import mybot.bot  # noqa: F401
 from mybot.common import feature_flags, runtime_state
-from mybot.plugins import admin_console, fortune, fun, help as help_plugin, poem, points
+from mybot.plugins import admin_console, fortune, fun, help as help_plugin, poem, points, practical_tools, translate
 
 
 class SystemOptimizationTest(unittest.TestCase):
@@ -19,6 +19,19 @@ class SystemOptimizationTest(unittest.TestCase):
         self.assertIn("命令列表", help_plugin.COMMAND_ALIASES)
         self.assertIn("查分", points.COMMAND_ALIASES)
         self.assertIn("低保", points.COMMAND_ALIASES)
+        self.assertIn("翻译", translate.COMMAND_ALIASES)
+        self.assertIn("总结", practical_tools.COMMAND_ALIASES)
+        self.assertIn("润色", practical_tools.COMMAND_ALIASES)
+        self.assertIn("解释", practical_tools.COMMAND_ALIASES)
+        self.assertIn("凯撒", practical_tools.COMMAND_ALIASES)
+        self.assertIn("摩斯", practical_tools.COMMAND_ALIASES)
+        self.assertIn("栅栏", practical_tools.COMMAND_ALIASES)
+        self.assertIn("维吉尼亚", practical_tools.COMMAND_ALIASES)
+        self.assertIn("培根", practical_tools.COMMAND_ALIASES)
+        self.assertIn("Base64", practical_tools.COMMAND_ALIASES)
+        self.assertIn("URL编码", practical_tools.COMMAND_ALIASES)
+        self.assertIn("Unicode", practical_tools.COMMAND_ALIASES)
+        self.assertIn("二进制", practical_tools.COMMAND_ALIASES)
 
     def test_runtime_state_defaults_enabled_and_toggles(self):
         with TemporaryDirectory() as tmp_dir:

@@ -97,7 +97,8 @@ def _is_protected_content(content: str) -> bool:
 
 
 def _should_cache_message(event: MessageEvent) -> bool:
-    if not is_feature_enabled("quotes"):
+    group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
+    if not is_feature_enabled("quotes", group_id):
         return False
     if not isinstance(event, GroupMessageEvent):
         return False
@@ -363,7 +364,7 @@ async def handle_add_quote(bot: Bot, event: MessageEvent, args: Message = Comman
                 f"（拨算盘）入典他人语录需 {cost} 积分，阁下当前只有 {points['current']} 积分。"
             )
         if not spend_points(recorder_id, group_id, cost):
-            await add_quote.finish("（扶额）扣除积分失败，稍后再试。")
+            await add_quote.finish("（算盘一停）这笔入典墨资暂时落不了账，稍后再试。")
 
     try:
         status, record, count = _add_classic(
