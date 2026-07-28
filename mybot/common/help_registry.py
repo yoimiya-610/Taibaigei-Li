@@ -10,6 +10,8 @@ class HelpItem:
     category: str
     text: str
     order: int = 100
+    min_permission_level: int = 0
+    system_admin_only: bool = False
 
 
 CATEGORY_META = {
@@ -38,6 +40,8 @@ def _module_help_items(module: ModuleType) -> list[HelpItem]:
                     category=item["category"],
                     text=item["text"],
                     order=item.get("order", 100),
+                    min_permission_level=item.get("min_permission_level", 0),
+                    system_admin_only=item.get("system_admin_only", False),
                 )
             )
     return items
@@ -54,6 +58,8 @@ def collect_help_items(group_id: str | int | None = None) -> list[tuple[str, int
         if not is_feature_enabled(feature, group_id):
             continue
         for index, item in enumerate(_module_help_items(module)):
+            if item.system_admin_only or item.min_permission_level > 0:
+                continue
             collected.append((module_name, index, item))
     return collected
 

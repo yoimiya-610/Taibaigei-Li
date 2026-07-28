@@ -12,6 +12,7 @@ class PluginLoadingTest(unittest.TestCase):
 
         self.assertIn("mybot.plugins.points", module_names)
         self.assertIn("mybot.plugins.fortune", module_names)
+        self.assertIn("mybot.plugins.onebot_diagnostics", module_names)
         self.assertIn("mybot.plugins_disabled.slot", module_names)
         self.assertFalse(
             any(

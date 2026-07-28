@@ -1,6 +1,6 @@
 # 李太白给
 
-李太白给是基于 NoneBot2 与 OneBot V11 的中文群聊机器人。当前产品版本为 **v0.7.1**；从公开基线 **v0.7.0.1** 起，本仓库是公开产品的上游源仓库和协作入口。
+李太白给是基于 NoneBot2 与 OneBot V11 的中文群聊机器人。当前产品版本为 **v0.7.2**；从公开基线 **v0.7.0.1** 起，本仓库是公开产品的上游源仓库和协作入口。
 
 代码采用 [MIT License](LICENSE)。运行数据、日志、备份、账号配置和密钥不属于源代码，也不得提交到 Git。
 
@@ -56,6 +56,11 @@ ws://127.0.0.1:8081/onebot/v11/ws
 - [NapCat 接入框架文档](https://napneko.github.io/use/integration)
 - [NoneBot OneBot V11 连接配置](https://onebot.adapters.nonebot.dev/docs/guide/setup/)
 
+连接后会自动执行无副作用的 OneBot 只读能力探测，并由共享注册表区分
+`supported`、`unsupported`、`unknown` 与 `degraded`。系统管理员可使用
+`/系统诊断` 查看脱敏摘要；最低能力、可选增强能力和降级规则见
+[OneBot 能力部署说明](docs/onebot-capabilities.md)。
+
 ## 运行数据
 
 以下目录只属于部署环境，并已由 `.gitignore` 和公开树自检阻止提交：
@@ -71,6 +76,7 @@ ws://127.0.0.1:8081/onebot/v11/ws
 
 - [部署指南](docs/deployment.md)
 - [配置参考](docs/configuration.md)
+- [OneBot 最低能力与可选增强能力](docs/onebot-capabilities.md)
 - [升级与回滚](docs/upgrading.md)
 - [更新记录](Update.md)
 - [贡献指南](CONTRIBUTING.md)
