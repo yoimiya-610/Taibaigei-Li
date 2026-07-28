@@ -26,6 +26,10 @@ uv sync --project mybot --locked
 uv run --project mybot li-taibaigei
 ```
 
+启动时会先输出配置预检结果。`warning` 不改变启动行为；`error` 会在 NoneBot 初始化、业务插件加载和端口绑定前退出，退出码固定为 `78`。按诊断中的变量名和修复建议调整 `mybot/.env` 或 systemd 环境后，直接重启原命令即可，无需增加命令行参数。
+
+预检不会显示配置值、QQ 号、群号或完整绝对路径，也不会连接或探测 OneBot。OneBot WebSocket 连通性仍在服务启动后按“连接 OneBot V11”一节核对。
+
 也可以在 `mybot` 目录中使用模块入口：
 
 ```bash
@@ -62,6 +66,14 @@ screen -r nonebot
 ```
 
 部署脚本默认只管理名为 `nonebot` 的 Screen 会话，不会操作其他会话或 OneBot 协议端。
+
+systemd 的 `ExecStart` 可继续使用无参数入口，例如：
+
+```ini
+ExecStart=/path/to/uv run --project mybot li-taibaigei
+```
+
+若服务以状态 `78` 结束，先查看同一启动日志中的 `error` 变量名并修复配置或目录权限；只有 warning 时不需要修改重启策略。
 
 ## 更新
 
@@ -103,6 +115,7 @@ bash tools/deploy_server.sh
 
 ## 部署后检查
 
+- 启动预检没有 `error`，且进程未以状态 `78` 退出。
 - OneBot WebSocket 已连接。
 - 普通非 AI 命令可响应。
 - 管理员权限符合本地配置。
