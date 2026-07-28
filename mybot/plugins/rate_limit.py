@@ -1,7 +1,7 @@
 import time
 from collections import defaultdict
 
-# 五个历史小游戏共享记录 {group_id_user_id: [timestamp1, ...]}
+# 六个历史小游戏共享记录 {group_id_user_id: [timestamp1, ...]}
 game_records = defaultdict(list)
 
 # 限制配置

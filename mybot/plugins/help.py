@@ -1,5 +1,5 @@
 from nonebot import on_command
-from nonebot.adapters.onebot.v11 import MessageEvent, Bot
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent, Bot
 
 from mybot.common.feature_flags import collect_features, get_legacy_rotation_day_name
 from mybot.common.help_registry import CATEGORY_META, HelpItem, render_category_help, render_help_menu
@@ -16,22 +16,26 @@ COMMAND_ALIASES = (
     "游戏", "游戏列表", "小游戏", "游戏大厅", "游戏大全",
     "关于", "about", "介绍",
     "积分说明", "积分帮助", "怎么赚积分", "积分规则", "怎么得积分",
-    "诗词文艺", "情感互动", "趣味功能", "签到积分", "社交互动", "AI对话", "系统说明",
+    "诗词文艺", "情感互动", "趣味功能", "签到积分", "社交互动", "太白酒馆", "AI对话", "系统说明",
 )
 
 LEGACY_GAME_KEYS = LEGACY_GAME_ORDER
 
 
-def _legacy_game_statuses() -> dict[str, str]:
-    feature_map = {item["key"]: item for item in collect_features()}
+def _event_group_id(event: MessageEvent) -> str | None:
+    return str(event.group_id) if isinstance(event, GroupMessageEvent) else None
+
+
+def _legacy_game_statuses(group_id: str | None = None) -> dict[str, str]:
+    feature_map = {item["key"]: item for item in collect_features(group_id)}
     return {
         key: "已开启" if feature_map.get(key, {}).get("enabled") else "已关闭"
         for key in LEGACY_GAME_KEYS
     }
 
 
-def _render_game_list() -> str:
-    status = _legacy_game_statuses()
+def _render_game_list(group_id: str | None = None) -> str:
+    status = _legacy_game_statuses(group_id)
     lines = [
         "🎮 李太白给·游戏大厅 🎮",
         "======================",
@@ -51,7 +55,7 @@ def _render_game_list() -> str:
         [
             "",
             "======================",
-            "/小游戏状态 - 查看五种游戏开关",
+            "/小游戏状态 - 查看六种游戏开关",
             "『旧局翻开凭兴致，得失且作一篇诗。』",
         ]
     )
@@ -63,14 +67,14 @@ help_cmd = on_command("help", aliases={"帮助", "菜单", "功能", "功能菜�
 
 @help_cmd.handle()
 async def handle_help(bot: Bot, event: MessageEvent):
-    await help_cmd.finish(render_help_menu())
+    await help_cmd.finish(render_help_menu(_event_group_id(event)))
 
 # 游戏列表
 game_list = on_command("游戏", aliases={"游戏列表", "小游戏", "游戏大厅", "游戏大全"}, priority=5, block=True)
 
 @game_list.handle()
 async def handle_game_list(bot: Bot, event: MessageEvent):
-    await game_list.finish(_render_game_list())
+    await game_list.finish(_render_game_list(_event_group_id(event)))
 
 
 def _register_category_command(category: str):
@@ -78,7 +82,7 @@ def _register_category_command(category: str):
 
     @matcher.handle()
     async def handle_category_menu(bot: Bot, event: MessageEvent):
-        text = render_category_help(category)
+        text = render_category_help(category, _event_group_id(event))
         if not text:
             await matcher.finish(
                 "（翻了翻空页）这卷眼下还没写内容。\n"
@@ -88,7 +92,7 @@ def _register_category_command(category: str):
 
 
 for _category in CATEGORY_META:
-    if _category != "小游戏":
+    if _category not in {"小游戏", "太白酒馆"}:
         _register_category_command(_category)
 
 # 关于

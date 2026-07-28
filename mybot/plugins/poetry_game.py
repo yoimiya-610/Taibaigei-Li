@@ -345,7 +345,8 @@ async def handle_end_poetry(bot: Bot, event: MessageEvent):
 # 监听诗句
 def poetry_answer_rule(event: MessageEvent) -> bool:
     """检查是否是飞花令回答"""
-    if not is_feature_enabled("poetry_game"):
+    group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
+    if not is_feature_enabled("poetry_game", group_id):
         return False
 
     if not isinstance(event, GroupMessageEvent):

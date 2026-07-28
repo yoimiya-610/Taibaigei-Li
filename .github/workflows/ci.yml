@@ -13,14 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+
       - name: Install locked dependencies
         run: uv sync --project mybot --locked
+
+      - name: Check public tree
+        run: uv run --project mybot python tools/check_public_tree.py
+
       - name: Compile source
         run: uv run --project mybot python -m compileall mybot/bot.py mybot/main.py mybot/common mybot/plugins mybot/plugins_disabled mybot/tests
+
+      - name: Run full test suite
+        run: uv run --project mybot python -m unittest discover -s mybot/tests -v
+
       - name: Validate deployment script
         run: bash -n tools/deploy_server.sh
-      - name: Run tests
-        run: uv run --project mybot python -m unittest discover -s mybot/tests -v
+
+      - name: Smoke-test application entry
+        run: uv run --project mybot python -c "import mybot.bot; print('plugins-loaded')"

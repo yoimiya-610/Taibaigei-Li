@@ -34,8 +34,9 @@ COMMAND_ALIASES = (
 )
 
 
-async def _feature_enabled() -> bool:
-    return is_feature_enabled(FEATURE_KEY)
+async def _feature_enabled(event: MessageEvent) -> bool:
+    group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
+    return is_feature_enabled(FEATURE_KEY, group_id)
 
 
 FEATURE_RULE = Rule(_feature_enabled)

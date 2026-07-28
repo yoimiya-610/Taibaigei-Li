@@ -26,7 +26,7 @@ def _read_lock_version() -> str:
 
 class VersionTest(unittest.TestCase):
     def test_version_metadata_is_in_sync(self):
-        self.assertEqual(__version__, "0.2.2")
+        self.assertEqual(__version__, "0.7.0")
         self.assertEqual(_read_project_version(), __version__)
         self.assertEqual(_read_lock_version(), __version__)
 

@@ -92,6 +92,19 @@ def get_current_streak(user_id: str, group_id: str) -> int:
     return calculate_current_streak(load_data(), user_id, group_id)
 
 
+def today_fortune_has_yi_item(user_id: str, group_id: str, item: str, today_date: date | None = None) -> bool:
+    today_date = today_date or datetime.now(APP_TIMEZONE).date()
+    key = fortune_record_key(today_date.strftime("%Y-%m-%d"), user_id, group_id)
+    record = load_data().get("fortune_record", {}).get(key)
+    if not isinstance(record, dict):
+        return False
+
+    yi_items = record.get("yi", [])
+    if not isinstance(yi_items, list):
+        return False
+    return item in {str(value).strip() for value in yi_items}
+
+
 def get_streak_evaluation(streak_count: int) -> str:
     if streak_count >= 365:
         return "岁岁不辍，签到已成阁下的日常修行。"

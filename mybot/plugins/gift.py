@@ -994,7 +994,7 @@ async def handle_tip(bot: Bot, event: MessageEvent, args: Message = CommandArg()
     fee, received = calculate_tip_distribution(amount)
     if not spend_points(user_id, group_id, amount):
         await tip_user.finish(
-            "（算盘一停）打赏扣款失败，请重新查看积分后再试。\n"
+            "（算盘一停）这笔打赏银钱暂时落不了账，请重新查看积分后再试。\n"
             "『账上珠声忽一乱，稍停片刻再传情。』"
         )
 

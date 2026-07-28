@@ -28,7 +28,7 @@ MAX_HISTORY = 20  # 记录最近20个谜底
 
 # API出错文案
 ERROR_MESSAGES = [
-    "（扶额）本猫的脑子好像宕机了...容本猫缓缓，稍后再来~",
+    "（扶额）本猫脑中墨线打了个结...容本猫缓缓，稍后再来~",
     "（揉太阳穴）哎呀，本猫今日诗兴不佳，改日再来吧~",
     "（打哈欠）本猫困了，让本猫休息一下再说...",
     "（晃酒壶）本猫喝多了，脑子转不动了，稍等片刻~",
@@ -291,7 +291,8 @@ async def handle_give_up(bot: Bot, event: MessageEvent):
 # 监听答案
 def riddle_answer_rule(event: MessageEvent) -> bool:
     """检查是否是猜谜答案"""
-    if not is_feature_enabled("riddle"):
+    group_id = event.group_id if isinstance(event, GroupMessageEvent) else None
+    if not is_feature_enabled("riddle", group_id):
         return False
 
     if not isinstance(event, GroupMessageEvent):

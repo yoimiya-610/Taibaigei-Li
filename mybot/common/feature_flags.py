@@ -18,10 +18,12 @@ FEATURE_ALIASES = {
     "youyimiya": "yoimiya",
 }
 DEFAULT_FEATURE_ENABLED = {
+    "group_chat_logs": True,
     "legacy_blackjack": False,
     "legacy_dice": False,
     "legacy_race": False,
     "legacy_roulette": False,
+    "legacy_scratch": False,
     "legacy_slot": False,
 }
 LEGACY_GAME_SET = set(LEGACY_GAME_ORDER)
@@ -37,6 +39,7 @@ FEATURE_NAMES = {
     "fun": "趣味功能",
     "game_disabled": "小游戏状态",
     "gift": "社交互动",
+    "group_chat_logs": "群聊记录",
     "hello": "调试命令",
     "help": "帮助菜单",
     **LEGACY_GAME_NAMES,
@@ -47,10 +50,13 @@ FEATURE_NAMES = {
     "poetry_game": "飞花令",
     "points": "积分排行",
     "premium_chat": "Pro对话档位",
+    "practical_tools": "实用功能",
     "quotes": "群友语录本",
     "rate_limit": "频率限制",
     "riddle": "猜谜",
+    "taibai_tavern": "太白酒馆",
     "roast_target": "代骂",
+    "translate": "翻译",
     "yoimiya": "米亚介绍",
 }
 
@@ -81,16 +87,23 @@ def is_legacy_game_scheduled(feature: str, now: date | datetime | None = None) -
         raise ValueError(f"unknown legacy feature: {feature}")
 
     day = _coerce_day(now)
-    if day.weekday() >= 5:
+    if day.weekday() >= len(LEGACY_GAME_ORDER):
         return True
     return LEGACY_GAME_ORDER[day.weekday()] == feature
 
 
 def _load_legacy_overrides() -> dict:
-    return load_json(LEGACY_GAME_OVERRIDES_FILE, {"date": "", "overrides": {}})
+    return load_json(
+        LEGACY_GAME_OVERRIDES_FILE,
+        {"date": "", "overrides": {}, "groups": {}},
+    )
 
 
-def get_legacy_game_override(feature: str, now: date | datetime | None = None) -> bool | None:
+def get_legacy_game_override(
+    feature: str,
+    now: date | datetime | None = None,
+    group_id: str | int | None = None,
+) -> bool | None:
     if feature not in LEGACY_GAME_SET:
         return None
 
@@ -98,24 +111,45 @@ def get_legacy_game_override(feature: str, now: date | datetime | None = None) -
     if data.get("date") != _rotation_token(now):
         return None
 
-    value = data.get("overrides", {}).get(feature)
+    if group_id is None:
+        value = data.get("overrides", {}).get(feature)
+    else:
+        value = data.get("groups", {}).get(str(group_id), {}).get(feature)
     if isinstance(value, bool):
         return value
     return None
 
 
-def get_legacy_game_enabled(feature: str, now: date | datetime | None = None) -> bool:
-    override = get_legacy_game_override(feature, now)
+def get_legacy_game_enabled(
+    feature: str,
+    now: date | datetime | None = None,
+    group_id: str | int | None = None,
+) -> bool:
+    override = get_legacy_game_override(feature, now, group_id)
     if override is not None:
         return override
+    if group_id is not None:
+        global_override = get_legacy_game_override(feature, now)
+        if global_override is not None:
+            return global_override
     return is_legacy_game_scheduled(feature, now)
 
 
-def get_legacy_game_status(feature: str, now: date | datetime | None = None) -> dict[str, str | bool]:
+def get_legacy_game_status(
+    feature: str,
+    now: date | datetime | None = None,
+    group_id: str | int | None = None,
+) -> dict[str, str | bool]:
     scheduled = is_legacy_game_scheduled(feature, now)
-    override = get_legacy_game_override(feature, now)
-    enabled = override if override is not None else scheduled
-    mode = "人工" if override is not None else "轮换"
+    override = get_legacy_game_override(feature, now, group_id)
+    enabled = get_legacy_game_enabled(feature, now, group_id)
+    global_override = get_legacy_game_override(feature, now)
+    if override is not None:
+        mode = "本群"
+    elif global_override is not None:
+        mode = "全局" if group_id is not None else "人工"
+    else:
+        mode = "轮换"
     return {
         "enabled": enabled,
         "scheduled": scheduled,
@@ -132,13 +166,17 @@ def _canonical_feature(feature: str) -> str:
     return FEATURE_ALIASES.get(feature, feature)
 
 
-def is_feature_enabled(feature: str) -> bool:
+def is_feature_enabled(feature: str, group_id: str | int | None = None) -> bool:
     feature = _canonical_feature(feature)
     if feature in PROTECTED_FEATURES:
         return True
     if feature in LEGACY_GAME_SET:
-        return get_legacy_game_enabled(feature)
+        return get_legacy_game_enabled(feature, group_id=group_id)
     flags = _load_flags()
+    if group_id is not None:
+        group_value = flags.get("groups", {}).get(str(group_id), {}).get(feature)
+        if isinstance(group_value, bool):
+            return group_value
     feature_values = flags.get("features", {})
     if feature in feature_values:
         return bool(feature_values[feature])
@@ -149,7 +187,11 @@ def is_feature_enabled(feature: str) -> bool:
     return bool(default)
 
 
-def set_feature_enabled(feature: str, enabled: bool) -> None:
+def set_feature_enabled(
+    feature: str,
+    enabled: bool,
+    group_id: str | int | None = None,
+) -> None:
     feature = _canonical_feature(feature)
     if feature in PROTECTED_FEATURES and not enabled:
         raise ValueError("protected_feature")
@@ -157,16 +199,37 @@ def set_feature_enabled(feature: str, enabled: bool) -> None:
         token = _rotation_token()
 
         def legacy_mutator(data: dict) -> None:
+            if data.get("date") != token:
+                data["overrides"] = {}
+                data["groups"] = {}
             data["date"] = token
             data.setdefault("overrides", {})
-            data["overrides"][feature] = bool(enabled)
+            if group_id is None:
+                data["overrides"][feature] = bool(enabled)
+                for values in data.get("groups", {}).values():
+                    values.pop(feature, None)
+            else:
+                data.setdefault("groups", {})
+                data["groups"].setdefault(str(group_id), {})
+                data["groups"][str(group_id)][feature] = bool(enabled)
 
-        mutate_json(LEGACY_GAME_OVERRIDES_FILE, {"date": "", "overrides": {}}, legacy_mutator)
+        mutate_json(
+            LEGACY_GAME_OVERRIDES_FILE,
+            {"date": "", "overrides": {}, "groups": {}},
+            legacy_mutator,
+        )
         return
 
     def mutator(data: dict) -> None:
         data.setdefault("features", {})
-        data["features"][feature] = bool(enabled)
+        if group_id is None:
+            data["features"][feature] = bool(enabled)
+            for values in data.get("groups", {}).values():
+                values.pop(feature, None)
+        else:
+            data.setdefault("groups", {})
+            data["groups"].setdefault(str(group_id), {})
+            data["groups"][str(group_id)][feature] = bool(enabled)
 
     mutate_json(FEATURE_FLAGS_FILE, {"features": {}}, mutator)
 
@@ -197,7 +260,7 @@ def _module_aliases(module: ModuleType) -> list[str]:
     return aliases
 
 
-def collect_features() -> list[dict]:
+def collect_features(group_id: str | int | None = None) -> list[dict]:
     features = []
     for module_name, module in list(sys.modules.items()):
         feature = module_feature_key(module_name)
@@ -207,7 +270,7 @@ def collect_features() -> list[dict]:
             {
                 "key": feature,
                 "name": get_feature_name(feature),
-                "enabled": is_feature_enabled(feature),
+                "enabled": is_feature_enabled(feature, group_id),
                 "protected": feature in PROTECTED_FEATURES,
                 "aliases": _module_aliases(module),
             }
@@ -251,14 +314,17 @@ def _matches_alias(text: str, alias: str) -> bool:
     return False
 
 
-def find_disabled_feature_for_message(message: str) -> str | None:
+def find_disabled_feature_for_message(
+    message: str,
+    group_id: str | int | None = None,
+) -> str | None:
     text = _normalize_message_text(message)
     if not text:
         return None
 
     for module_name, module in list(sys.modules.items()):
         feature = module_feature_key(module_name)
-        if not feature or is_feature_enabled(feature):
+        if not feature or is_feature_enabled(feature, group_id):
             continue
         for alias in _module_aliases(module):
             if _matches_alias(text, alias):

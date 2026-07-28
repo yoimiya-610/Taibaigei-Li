@@ -1,5 +1,8 @@
 # Local environment and Python caches
 .env
+.env.*
+!.env.example
+!mybot/.env.example
 .venv/
 venv/
 env/
@@ -8,8 +11,13 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
 
-# Runtime data: may contain QQ IDs, message excerpts, rankings and credentials
+# Runtime data: may contain IDs, messages, rankings, credentials, or tokens
 mybot/data/
 mybot/logs/
 backups/
@@ -21,7 +29,20 @@ backups/
 *.sqlite3
 *.tmp
 *.bak
+*.tar.gz
+*.tar.xz
+*.tar.bz2
 
-# Local bot adapters and their configuration
+# Local OneBot implementations and configuration
 napcat/
 lagrange/
+onebot11.json
+onebot11_*.json
+webui.json
+
+# Local automation artifacts
+.agents/
+.codex/
+.codex_worktrees/
+.codex_pr_body.md
+.codex_release_notes_*.md

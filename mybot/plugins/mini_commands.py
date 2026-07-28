@@ -4,12 +4,15 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 from mybot.common.charm import change_charm
 from mybot.common.gift_store import GIFT_BY_ID, add_gift_item, consume_gift_item
 from mybot.common.logger import get_plugin_logger
+from mybot.common.streak import today_fortune_has_yi_item
+from mybot.common.titles import grant_title
 from mybot.common.user_utils import get_nickname
 
 
 COMMAND_ALIASES = ("起飞",)
 
 FLIGHT_CUP_ID = "flight_cup"
+CHINA_CAPTAIN_TITLE_ID = "secret_china_captain"
 
 logger = get_plugin_logger(__name__)
 
@@ -49,6 +52,12 @@ def use_flight_cup_on_self(user_id: str, group_id: str) -> dict:
     }
 
 
+def grant_china_captain_if_eligible(user_id: str, group_id: str):
+    if not today_fortune_has_yi_item(user_id, group_id, "起飞"):
+        return None
+    return grant_title(user_id, group_id, CHINA_CAPTAIN_TITLE_ID)
+
+
 flight = on_command("起飞", priority=5, block=True)
 
 
@@ -80,13 +89,18 @@ async def handle_flight(bot: Bot, event: MessageEvent):
         )
 
     nickname = await get_nickname(bot, user_id, context="起飞")
+    hidden_title_text = ""
+    hidden_title = grant_china_captain_if_eligible(user_id, group_id)
+    if hidden_title:
+        hidden_title_text = f"\n🎖 天外名号：{hidden_title.title} 已入册"
+
     await flight.finish(
         f"{gift['icon']} 起飞成功\n"
         f"{'='*22}\n"
         f"（{nickname} 把 {gift['name']} 往掌心一托，杯底忽然生风。）\n"
         f"魅力值 {_format_charm_delta(result['charm_gain'])}\n"
         f"背包余量：{result['quantity']} 件\n"
-        f"{'='*22}\n"
+        f"{'='*22}{hidden_title_text}\n"
         "『杯中忽起三千浪，\n"
         "扶摇一瞬过云廊。\n"
         "本猫墨镜刚扶稳，\n"

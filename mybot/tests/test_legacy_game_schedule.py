@@ -11,18 +11,18 @@ class LegacyGameScheduleTest(unittest.TestCase):
     def test_weekday_rotation_matches_order(self):
         monday = date(2026, 6, 29)
         tuesday = date(2026, 6, 30)
-        friday = date(2026, 7, 3)
+        saturday = date(2026, 7, 4)
 
         self.assertTrue(feature_flags.is_legacy_game_scheduled("legacy_slot", monday))
         self.assertFalse(feature_flags.is_legacy_game_scheduled("legacy_dice", monday))
         self.assertTrue(feature_flags.is_legacy_game_scheduled("legacy_dice", tuesday))
-        self.assertTrue(feature_flags.is_legacy_game_scheduled("legacy_roulette", friday))
+        self.assertTrue(feature_flags.is_legacy_game_scheduled("legacy_scratch", saturday))
 
-    def test_weekend_opens_all_legacy_games(self):
-        saturday = date(2026, 7, 4)
+    def test_sunday_opens_all_legacy_games(self):
+        sunday = date(2026, 7, 5)
 
         for feature in feature_flags.LEGACY_GAME_ORDER:
-            self.assertTrue(feature_flags.is_legacy_game_scheduled(feature, saturday))
+            self.assertTrue(feature_flags.is_legacy_game_scheduled(feature, sunday))
 
     def test_manual_override_expires_on_next_day(self):
         monday = date(2026, 6, 29)

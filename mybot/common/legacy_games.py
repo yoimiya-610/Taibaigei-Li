@@ -58,6 +58,15 @@ LEGACY_GAMES: tuple[LegacyGameInfo, ...] = (
         usage=("/转盘挑战 金额", "/转盘 金额（单人）", "/加入转盘", "/开始转盘", "/转一轮", "/取消转盘"),
         summary="单人模式通过安全格可得0.15倍奖励；多人模式支持2至6人，最后留在局中的人获得95%积分池；单次最多100积分。",
     ),
+    LegacyGameInfo(
+        feature_key="legacy_scratch",
+        module_name="scratch",
+        display_name="刮刮挑战",
+        primary_command="/刮刮挑战 级别",
+        help_order=70,
+        usage=("/刮刮挑战 1/2/3", "/刮开 位置1 位置2 位置3", "/放弃刮刮"),
+        summary="分为20、50、100积分三档，开局亮出九张背面牌，选择三张刮开并按图案分值相加结算。",
+    ),
 )
 
 LEGACY_GAME_ORDER = tuple(game.feature_key for game in LEGACY_GAMES)
