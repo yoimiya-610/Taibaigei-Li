@@ -2,6 +2,20 @@
 
 李太白给从 `mybot/.env` 读取本地配置。先复制 `mybot/.env.example`，再只在部署环境填写真实值；该文件被 Git 忽略。
 
+## 启动前配置检查
+
+无参数执行 `li-taibaigei` 或模块入口时，程序会先读取 `mybot/.env`，生成结构化检查结果，再初始化 NoneBot、加载业务插件和监听端口：
+
+| 级别 | 启动行为 | 典型情况 |
+| --- | --- | --- |
+| `error` | 在绑定端口前退出，稳定返回退出码 `78` | Python 版本过低、非法 `HOST` / `PORT` / `COMMAND_START`、NoneBot 管理员格式会破坏初始化、运行目录不可写 |
+| `warning` | 继续按既有方式启动 | 缺少 `.env`、管理员或 AI 密钥，自动化与保留策略参数使用安全默认值 |
+| `info` | 继续启动 | 配置有效、使用既有默认值或可选能力已配置 |
+
+检查覆盖 `PYTHON_VERSION`、`ENV_FILE`、`HOST`、`PORT`、`COMMAND_START`、`BOT_ADMINS` / `SUPERUSERS`、`DEEPSEEK_API_KEY`、`ONEBOT_ACCESS_TOKEN`、自动化参数，以及 `DATA_DIR`、`LOG_DIR`、`BACKUP_DIR` 的可写性。为兼容已有升级环境，如果存在 `GROUP_CHAT_LOG_RETENTION_DAYS`、`BACKUP_KEEP_DAYS`、`BACKUP_KEEP_COUNT`、`BACKUP_INCLUDE_GROUP_CHAT_LOGS` 或 `BACKUP_INCLUDE_IMAGE_LIBRARY`，预检也会校验其格式；非法保留策略值只产生 warning，并继续沿用既有安全降级行为。
+
+诊断行只包含级别、变量名和固定修复建议，不插入原始配置值，因此不会显示密钥、QQ 号、群号或完整绝对路径。v0.7.1 不执行 OneBot 网络、登录状态或协议能力探测。
+
 ## 必需的服务配置
 
 | 变量 | 模板值 | 说明 |
