@@ -49,6 +49,13 @@ ws://127.0.0.1:8081/onebot/v11/ws
 
 NapCat 用户请按其 [官方安装文档](https://napneko.github.io/guide/install) 安装，再按 [官方接入文档](https://napneko.github.io/use/integration) 创建 WebSocket 客户端。本仓库不安装、更新、重启或重新登录 NapCat。
 
+连接建立后，李太白给会使用 `get_version_info` 与 `get_status` 进行一次无副作用的
+只读探测。探测不会发送消息、点赞、戳一戳、修改精华消息或群设置；单项扩展能力
+缺失也不会阻止机器人启动。系统管理员可用 `/系统诊断` 查看脱敏的连接与能力摘要。
+
+部署前请阅读 [OneBot 最低能力与可选增强能力](onebot-capabilities.md)，确认当前协议端
+对名片点赞、图片地址刷新以及可选的群戳一戳、精华消息和图片 OCR 的支持范围。
+
 ## 使用 Screen 运行
 
 在仓库根目录执行：
@@ -117,6 +124,7 @@ bash tools/deploy_server.sh
 
 - 启动预检没有 `error`，且进程未以状态 `78` 退出。
 - OneBot WebSocket 已连接。
+- `/系统诊断` 显示预期的实现名称、版本和能力状态，且没有持续停留在“探测中”。
 - 普通非 AI 命令可响应。
 - 管理员权限符合本地配置。
 - AI 密钥为空时，非 AI 功能仍正常。

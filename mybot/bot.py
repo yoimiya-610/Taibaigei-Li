@@ -33,6 +33,7 @@ def initialize_bot():
     global _initialized
     import nonebot
     from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter
+    from mybot.common.onebot_capabilities import register_onebot_capability_hooks
 
     if _initialized:
         return nonebot
@@ -40,6 +41,7 @@ def initialize_bot():
     nonebot.init()
     driver = nonebot.get_driver()
     driver.register_adapter(OneBotAdapter)
+    register_onebot_capability_hooks(driver)
     _load_package_plugins("mybot.plugins", eager_modules=("points",))
     _load_package_plugins("mybot.plugins_disabled")
     _initialized = True

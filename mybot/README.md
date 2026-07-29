@@ -1,6 +1,6 @@
 # 李太白给 Python 包
 
-本目录包含李太白给 v0.7.1 的 NoneBot2 应用、共享模块、插件和测试。仓库根目录是推荐的命令执行位置。
+本目录包含李太白给 v0.7.2 的 NoneBot2 应用、共享模块、插件和测试。仓库根目录是推荐的命令执行位置。
 
 ## 启动入口
 
@@ -18,6 +18,10 @@ uv run --project mybot python -m mybot.main
 启动前将 `mybot/.env.example` 复制为 `mybot/.env`，并按 [配置参考](../docs/configuration.md) 填写本地值。AI 密钥、管理员 ID 和定时问候群组均可留空；OneBot V11 连接仍需在协议端完成配置。
 
 两个入口都会先运行结构化配置预检；`error` 在 NoneBot 初始化、业务插件加载和端口绑定前以退出码 `78` 结束，`warning` 不阻止启动。预检不会执行 OneBot 网络探测，也不会输出任何配置值或完整绝对路径。
+
+OneBot 连接建立后才会执行 `get_version_info` 与 `get_status` 只读能力探测。系统管理员
+可使用 `/系统诊断` 查看连接、实现版本和五项现有 OneBot 能力的脱敏摘要；扩展能力
+缺失只影响对应功能，不影响机器人整体启动。
 
 ## 目录
 

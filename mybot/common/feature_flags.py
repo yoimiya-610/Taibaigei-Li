@@ -9,7 +9,7 @@ from mybot.common.legacy_games import LEGACY_GAME_BY_MODULE, LEGACY_GAME_NAMES, 
 
 FEATURE_FLAGS_FILE = Path(__file__).resolve().parent.parent / "data" / "feature_flags.json"
 LEGACY_GAME_OVERRIDES_FILE = Path(__file__).resolve().parent.parent / "data" / "legacy_game_overrides.json"
-PROTECTED_FEATURES = {"admin_console"}
+PROTECTED_FEATURES = {"admin_console", "onebot_diagnostics"}
 DISABLED_PLUGIN_FEATURES = {
     module_name: game.feature_key
     for module_name, game in LEGACY_GAME_BY_MODULE.items()
@@ -46,6 +46,7 @@ FEATURE_NAMES = {
     "love": "情感互动",
     "mini_commands": "彩蛋小令",
     "monthly_fame": "月度风云榜",
+    "onebot_diagnostics": "OneBot 系统诊断",
     "poem": "诗词文艺",
     "poetry_game": "飞花令",
     "points": "积分排行",
