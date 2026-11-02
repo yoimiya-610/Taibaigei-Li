@@ -1,131 +1,78 @@
 # 部署指南
 
-本指南部署李太白给的 NoneBot 端。OneBot V11 协议端应独立安装和维护。
+本指南部署李太白给的 NoneBot 端，OneBot V11 协议端独立维护。需要 Python 3.11 或更高版本、`uv`、`git`；Linux 自动更新还需要 Bash、systemd 及管理目标服务的权限。
 
-## 前置条件
-
-- Python 3.10 或更高版本。
-- `uv`、`git`。
-- 已运行的 OneBot V11 实现。
-- 使用仓库更新脚本时还需要 `bash` 与 `screen`。
-
-## 首次部署
+## 首次启动
 
 ```bash
 git clone https://github.com/yoimiya-610/Taibaigei-Li.git
 cd Taibaigei-Li
 cp mybot/.env.example mybot/.env
-```
-
-编辑本地 `mybot/.env`，至少确认监听地址、端口和命令前缀。管理员、定时问候和 AI 配置均可稍后添加。完整字段见 [配置参考](configuration.md)。
-
-安装锁定依赖并启动：
-
-```bash
 uv sync --project mybot --locked
 uv run --project mybot li-taibaigei
 ```
 
-启动时会先输出配置预检结果。`warning` 不改变启动行为；`error` 会在 NoneBot 初始化、业务插件加载和端口绑定前退出，退出码固定为 `78`。按诊断中的变量名和修复建议调整 `mybot/.env` 或 systemd 环境后，直接重启原命令即可，无需增加命令行参数。
+Windows 复制模板使用 `Copy-Item mybot/.env.example mybot/.env`，启动命令相同。真实管理员、群号、密钥和令牌只填写在本地配置中。配置项见 [配置参考](configuration.md)。没有 AI 密钥时仍可使用非 AI 功能，定时问候目标为空时不发送问候。
 
-预检不会显示配置值、QQ 号、群号或完整绝对路径，也不会连接或探测 OneBot。OneBot WebSocket 连通性仍在服务启动后按“连接 OneBot V11”一节核对。
-
-也可以在 `mybot` 目录中使用模块入口：
-
-```bash
-cd mybot
-uv run python -m mybot.main
-```
+无参数入口先检查配置，再加载插件、绑定端口。致命配置错误以状态 `78` 退出，只输出变量名和固定建议；warning 不阻止启动，也不显示配置值。
 
 ## 连接 OneBot V11
 
-推荐配置反向 WebSocket：NoneBot 作为服务端，协议端作为客户端。模板端口下的地址为：
+同机部署推荐让协议端作为反向 WebSocket 客户端连接：
 
 ```text
 ws://127.0.0.1:8081/onebot/v11/ws
 ```
 
-若设置了 `ONEBOT_ACCESS_TOKEN`，协议端必须配置同一个令牌。连接成功后，应在协议端和 NoneBot 日志中看到 WebSocket 建连信息。
+地址和端口须与 `HOST`、`PORT` 一致；若设置 `ONEBOT_ACCESS_TOKEN`，两端必须使用相同令牌。跨主机时使用协议端可达的地址，并配置令牌与访问控制。
 
-NapCat 用户请按其 [官方安装文档](https://napneko.github.io/guide/install) 安装，再按 [官方接入文档](https://napneko.github.io/use/integration) 创建 WebSocket 客户端。本仓库不安装、更新、重启或重新登录 NapCat。
+NapCat 安装、更新与登录由其上游维护，参见 [官方安装指南](https://napneko.github.io/guide/install) 和 [接入说明](https://napneko.github.io/use/integration)。本项目的更新脚本只操作机器人服务。
 
-连接建立后，李太白给会使用 `get_version_info` 与 `get_status` 进行一次无副作用的
-只读探测。探测不会发送消息、点赞、戳一戳、修改精华消息或群设置；单项扩展能力
-缺失也不会阻止机器人启动。系统管理员可用 `/系统诊断` 查看脱敏的连接与能力摘要。
+建连后使用 `get_version_info`、`get_status` 做只读能力探测。系统管理员可用 `/系统诊断` 查看存储、任务和 OneBot 能力摘要；探测失败不会阻止启动。最低要求与降级行为见 [OneBot 能力说明](onebot-capabilities.md)。
 
-部署前请阅读 [OneBot 最低能力与可选增强能力](onebot-capabilities.md)，确认当前协议端
-对名片点赞、图片地址刷新以及可选的群戳一戳、精华消息和图片 OCR 的支持范围。
+## Linux systemd 托管
 
-## 使用 Screen 运行
+使用专门的非 root 账户运行机器人。以下示例假定运行账户、组均为 `taibaigei`，checkout 位于 `/opt/taibaigei`；部署者应先建立账户和目录，并确保该账户能读取代码、本地配置和虚拟环境，能写入 `mybot/data/`、`mybot/logs/`、`backups/`。
 
-在仓库根目录执行：
+先完成锁定依赖同步，并在前台确认启动成功，再按 Ctrl+C 结束前台实例。复制 [服务模板](../tools/taibaigei.service.example)，按实际账户、组、checkout 路径修改 `User`、`Group`、`WorkingDirectory`、`ExecStart`：
 
 ```bash
-cd mybot
-screen -dmS nonebot uv run python bot.py
-cd ..
+sudo cp tools/taibaigei.service.example /etc/systemd/system/taibaigei.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now taibaigei.service
+sudo systemctl status taibaigei.service --no-pager
 ```
 
-查看会话：
+服务直接执行锁定环境中的入口，不需要 systemd 通过交互 shell 查找 uv。配置由程序从 checkout 的 `mybot/.env` 加载；不需要另设 `EnvironmentFile`。模板会在配置错误 `78` 时停止重试，修复配置后执行 `sudo systemctl restart taibaigei.service`。查看日志：
 
 ```bash
-screen -r nonebot
+sudo journalctl -u taibaigei.service -n 80 --no-pager
 ```
 
-部署脚本默认只管理名为 `nonebot` 的 Screen 会话，不会操作其他会话或 OneBot 协议端。
-
-systemd 的 `ExecStart` 可继续使用无参数入口，例如：
-
-```ini
-ExecStart=/path/to/uv run --project mybot li-taibaigei
-```
-
-若服务以状态 `78` 结束，先查看同一启动日志中的 `error` 变量名并修复配置或目录权限；只有 warning 时不需要修改重启策略。
+从 Screen 升级时，先结束原机器人会话并确认原进程退出，再启用 systemd；不要同时运行两份机器人。Windows 可继续前台运行或由自己的进程管理器托管，不能执行本 Linux 更新脚本。
 
 ## 更新
 
-先阅读 [升级与回滚](upgrading.md) 并确认运行数据已备份。日常更新可在仓库根目录执行：
+先按 [升级与回滚](upgrading.md) 在 Git 外备份状态。以能够管理目标服务、运行 uv 并更新 checkout 的部署账户执行：
 
 ```bash
 bash tools/deploy_server.sh
 ```
 
-脚本行为：
+更新流程会先检查本地代码改动和服务配置，在当前机器人仍运行时获取 `origin/main`，只接受快进；随后停止目标 systemd 服务、更新代码和锁定依赖，再启动并核对 `active`、有效 `MainPID` 和进程存活。代码已是最新但服务异常时，也会尝试恢复服务。同步失败时尝试拉起已停止的服务，并输出诊断；它不会自动回退代码或数据。
 
-1. 检查依赖命令与本地代码改动。
-2. 在机器人仍运行时获取目标分支。
-3. 仅接受可快进更新。
-4. 只停止目标 NoneBot Screen 会话。
-5. 快进代码并执行 `uv sync --locked`。
-6. 恢复需要迁出的运行状态并重新启动 NoneBot。
-
-可选环境变量：
-
-| 变量 | 默认值 | 说明 |
+| 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `BOT_BRANCH` | `main` | 更新目标分支。 |
-| `BOT_SCREEN_NAME` | `nonebot` | NoneBot Screen 会话名。 |
-| `BOT_STOP_TIMEOUT` | `20` | 等待优雅停止的秒数。 |
-| `BOT_START_WAIT` | `3` | 启动后检查会话的等待秒数。 |
-| `RUNTIME_STATE_ROOT` | 当前用户目录 | 旧版本停止跟踪运行目录时的临时保存位置。 |
+| `BOT_BRANCH` | `main` | 获取的目标分支 |
+| `BOT_SERVICE_NAME` | `taibaigei.service` | 要管理的 systemd 服务 |
+| `BOT_SYSTEMCTL_BIN` | `systemctl` | systemctl 可执行文件 |
+| `BOT_START_WAIT` | `3` | 启动后检查等待秒数 |
+| `RUNTIME_STATE_ROOT` | 当前用户目录 | 历史版本停止跟踪运行目录时的临时保存位置 |
 
-脚本发现本地源代码修改、非快进历史或启动失败时会停止并保留诊断信息，不会强制覆盖工作区。
+自定义服务名时先导出 `BOT_SERVICE_NAME`。uv 必须在部署账户的 PATH 中；不要使用未安装 uv 的账户直接运行更新脚本。脚本不安装 systemd 服务，不迁移 Screen 会话，也不授予账户提权权限。
 
-## 数据与备份
+## 数据与验证
 
-运行状态位于 `mybot/data/`、`mybot/logs/` 和 `backups/`，均不受 Git 管理。备份至少应满足：
+运行状态位于 `mybot/data/`、`mybot/logs/`、`backups/`，本地配置位于 `mybot/.env`，均不提交到 Git。备份可能包含消息、用户标识和密钥，应保存在访问受限的 Git 外目录。保留策略默认不自动清理；配置与图片库容量限制见配置参考。
 
-- 存储位置与源码 checkout 分离。
-- 访问权限不宽于机器人运行账户。
-- 如含群聊记录，应采用与消息数据相同的保护和删除策略。
-- 升级前创建快照，升级验证后再按保留策略清理旧快照。
-
-## 部署后检查
-
-- 启动预检没有 `error`，且进程未以状态 `78` 退出。
-- OneBot WebSocket 已连接。
-- `/系统诊断` 显示预期的实现名称、版本和能力状态，且没有持续停留在“探测中”。
-- 普通非 AI 命令可响应。
-- 管理员权限符合本地配置。
-- AI 密钥为空时，非 AI 功能仍正常。
-- 数据、日志和备份目录未被 Git 跟踪。
+部署完成后检查服务与 OneBot 连接、普通命令、管理员权限以及 `/系统诊断`。六个历史小游戏源码仍会加载，但每天默认关闭，需管理员显式启用。群聊记录、图片库和备份的采集与保留应由部署者按实际需求配置。

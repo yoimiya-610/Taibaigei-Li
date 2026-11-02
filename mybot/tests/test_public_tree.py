@@ -33,6 +33,10 @@ class PublicTreeCheckTest(unittest.TestCase):
         findings = self._scan("mybot/data/points.json", "{}")
         self.assertTrue(any(item.code == "runtime-data" for item in findings))
 
+    def test_private_synchronization_state_is_rejected(self):
+        findings = self._scan(".github/public-upstream-state.json", "{}")
+        self.assertTrue(any(item.code == "forbidden-path" for item in findings))
+
     def test_secret_assignment_is_rejected(self):
         findings = self._scan("mybot/.env.example", "DEEPSEEK_API_KEY=sk-example-secret-value\n")
         self.assertTrue(any(item.code == "private-content" for item in findings))
@@ -55,6 +59,11 @@ class PublicTreeCheckTest(unittest.TestCase):
     def test_redistributed_napcat_installer_is_rejected(self):
         findings = self._scan("napcat.sh", "#!/usr/bin/env bash\n")
         self.assertTrue(any(item.code == "forbidden-path" for item in findings))
+
+    def test_synthetic_ssrf_fixture_is_allowed_only_in_its_test(self):
+        self.assertEqual(self._scan("mybot/tests/test_image_library.py", "http://10.0.0.1/a.png"), [])
+        self.assertTrue(self._scan("mybot/common/config.py", "http://10.0.0.1/a.png"))
+        self.assertTrue(self._scan("mybot/tests/test_image_library.py", "DEEPSEEK_API_KEY=sk-example-secret-value\n"))
 
 
 if __name__ == "__main__":

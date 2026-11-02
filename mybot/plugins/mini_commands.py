@@ -1,3 +1,22 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="mini_commands",
+    name="彩蛋小令",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    data_files=(
+        "data/charm.json",
+        "data/fortune_data.json",
+        "data/gift_inventory.json",
+        "data/titles.json",
+    ),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageEvent
 
@@ -10,6 +29,7 @@ from mybot.common.user_utils import get_nickname
 
 
 COMMAND_ALIASES = ("起飞",)
+PUBLIC_COMMANDS = COMMAND_ALIASES
 
 FLIGHT_CUP_ID = "flight_cup"
 CHINA_CAPTAIN_TITLE_ID = "secret_china_captain"

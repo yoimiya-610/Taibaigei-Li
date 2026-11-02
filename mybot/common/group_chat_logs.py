@@ -8,11 +8,24 @@ from typing import Any
 
 from nonebot.adapters.onebot.v11 import GroupMessageEvent
 
-from mybot.common.message_utils import get_message_text
-
-
 CHAT_LOG_ROOT = Path(__file__).resolve().parent.parent / "data" / "group_chat_logs"
 _WRITE_LOCK = RLock()
+BOT_DISPLAY_NAME = "李太白给"
+_SEGMENT_PLACEHOLDERS = {
+    "image": "图片",
+    "video": "视频",
+    "record": "语音",
+    "file": "文件",
+    "at": "提及",
+    "reply": "回复",
+    "json": "卡片",
+    "xml": "卡片",
+    "forward": "合并转发",
+    "node": "转发节点",
+    "location": "位置",
+    "music": "音乐",
+    "share": "分享",
+}
 
 
 def _yaml_scalar(value: Any) -> str:
@@ -64,6 +77,89 @@ def _clean_sender_value(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _nested_value(data: dict[str, Any], key: str) -> Any:
+    value = data.get(key)
+    if value is not None:
+        return value
+    raw = data.get("raw")
+    return raw.get(key) if isinstance(raw, dict) else None
+
+
+def _slim_segment(segment_type: Any, data: Any) -> dict[str, Any]:
+    kind = str(segment_type or "unknown")
+    segment_data = data if isinstance(data, dict) else {}
+    if kind == "text":
+        return {
+            "type": "text",
+            "data": {"text": _clean_sender_value(segment_data.get("text"))},
+        }
+    if kind == "face":
+        face_index = _nested_value(segment_data, "faceIndex")
+        if face_index is None:
+            face_index = segment_data.get("id")
+        face_text = _nested_value(segment_data, "faceText")
+        return {
+            "type": "face",
+            "data": {
+                "faceIndex": face_index,
+                "faceText": _clean_sender_value(face_text),
+            },
+        }
+    return {
+        "type": kind,
+        "data": {"text": _SEGMENT_PLACEHOLDERS.get(kind, f"[{kind}]")},
+    }
+
+
+def slim_message_content(segments: Any, fallback_text: Any = "") -> list[dict[str, Any]]:
+    """Return stable message content without transient OneBot metadata."""
+    content: list[dict[str, Any]] = []
+    if segments is not None:
+        if isinstance(segments, str):
+            message_segments = ({"type": "text", "data": {"text": segments}},)
+        elif isinstance(segments, dict) or hasattr(segments, "type"):
+            message_segments = (segments,)
+        else:
+            try:
+                message_segments = iter(segments)
+            except TypeError:
+                message_segments = (segments,)
+        for segment in message_segments:
+            if isinstance(segment, dict):
+                content.append(_slim_segment(segment.get("type"), segment.get("data")))
+            else:
+                content.append(
+                    _slim_segment(
+                        getattr(segment, "type", None),
+                        getattr(segment, "data", None),
+                    )
+                )
+    if not content and fallback_text:
+        content.append(_slim_segment("text", {"text": fallback_text}))
+    return content
+
+
+def normalize_group_message_record(record: Any) -> dict[str, Any]:
+    """Expose old and new log records through the current four-field shape."""
+    source = record if isinstance(record, dict) else {}
+    sender = source.get("sender")
+    sender_data = sender if isinstance(sender, dict) else {}
+    nickname = source.get("nickname")
+    if nickname is None:
+        nickname = sender_data.get("card") or sender_data.get("nickname") or ""
+    content = source.get("content")
+    if not isinstance(content, list):
+        content = slim_message_content(source.get("segments"), source.get("text", ""))
+    else:
+        content = slim_message_content(content)
+    return {
+        "time": _clean_sender_value(source.get("time")),
+        "user_id": _clean_sender_value(source.get("user_id")),
+        "nickname": _clean_sender_value(nickname),
+        "content": content,
+    }
+
+
 def build_group_message_record(
     event: GroupMessageEvent,
     captured_at: datetime | None = None,
@@ -72,22 +168,25 @@ def build_group_message_record(
     sender = event.sender
     return {
         "time": now.isoformat(timespec="seconds"),
-        "message_id": getattr(event, "message_id", None),
-        "group_id": str(event.group_id),
         "user_id": str(event.user_id),
-        "sender": {
-            "nickname": _clean_sender_value(getattr(sender, "nickname", "")),
-            "card": _clean_sender_value(getattr(sender, "card", "")),
-            "role": _clean_sender_value(getattr(sender, "role", "")),
-        },
-        "text": get_message_text(event),
-        "segments": [
-            {
-                "type": segment.type,
-                "data": dict(segment.data),
-            }
-            for segment in event.message
-        ],
+        "nickname": _clean_sender_value(
+            getattr(sender, "card", "") or getattr(sender, "nickname", "")
+        ),
+        "content": slim_message_content(event.message),
+    }
+
+
+def build_sent_group_message_record(
+    self_id: str | int,
+    message: Any,
+    captured_at: datetime | None = None,
+) -> dict[str, Any]:
+    now = captured_at or datetime.now()
+    return {
+        "time": now.isoformat(timespec="seconds"),
+        "user_id": str(self_id),
+        "nickname": BOT_DISPLAY_NAME,
+        "content": slim_message_content(message),
     }
 
 
@@ -110,3 +209,37 @@ def save_group_message_record(
     path = get_group_log_path(event.group_id, now, root)
     _append_yaml_record(path, record)
     return path
+
+
+def save_sent_group_message_record(
+    group_id: str | int,
+    self_id: str | int,
+    message: Any,
+    captured_at: datetime | None = None,
+    root: Path = CHAT_LOG_ROOT,
+) -> Path:
+    now = captured_at or datetime.now()
+    record = build_sent_group_message_record(self_id, message, now)
+    path = get_group_log_path(group_id, now, root)
+    _append_yaml_record(path, record)
+    return path
+
+
+def extract_sent_group_message(
+    api: str,
+    data: dict[str, Any],
+) -> tuple[str | int, Any] | None:
+    """Return group and message for OneBot APIs that send a normal group message."""
+    if "message" not in data:
+        return None
+    group_id = data.get("group_id")
+    if group_id is None:
+        return None
+    if api == "send_group_msg":
+        return group_id, data["message"]
+    if api != "send_msg":
+        return None
+    message_type = str(data.get("message_type") or "").lower()
+    if message_type and message_type != "group":
+        return None
+    return group_id, data["message"]

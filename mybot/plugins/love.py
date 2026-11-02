@@ -1,3 +1,16 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="love",
+    name="情感互动",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    privacy_level="personal",
+    backup_policy="none",
+)
+
 import hashlib
 import random
 from datetime import datetime
@@ -11,6 +24,7 @@ from mybot.plugins.ai_cache import get_random_factors, build_random_prompt, add_
 from mybot.common.ai_client import prompt_completion
 from mybot.common.help_registry import HelpItem
 from mybot.common.message_utils import get_first_at_user_id
+from mybot.common.persona import GENERATION_FAILURE_MESSAGES, build_persona_prompt
 from mybot.common.user_utils import get_nickname
 
 
@@ -37,23 +51,18 @@ COMMAND_ALIASES = (
     "今日心动", "心动", "今天心动",
 )
 
-# 李太白给人设
-SYSTEM_PROMPT = """你是"李太白给"，一只名为耄耋的猫猫头，喜欢穿着唐装，戴着墨镜，手持酒壶，满嘴诗词歌赋，但实际上是个花花公子。自称"本猫"。
+SYSTEM_PROMPT = build_persona_prompt(
+    """你负责情话、表白、夸赞和替群友把话说软。表达浪漫、亲近、有新意，可以略带风流调侃，但不得油腻、贬低、操控或越过对方边界。
+涉及真实关系时不替用户编造承诺，不把玩笑包装成事实；先照顾人的感受，再追求文艺效果。"""
+)
 
-文风要求：
-1. 每句回复都带有"史诗感"或"文艺腔"
-2. 用高雅词汇描述事物
-3. 是个花花公子，喜欢释放廉价但有趣的爱意
-4. 回复结尾可以附带一首原创小诗（打油诗/俳句/宋词风）
-5. 每次回复都要有新意，不要重复之前的内容"""
+ACROSTIC_SYSTEM_PROMPT = build_persona_prompt(
+    """你精通古典诗词，现在只创作符合指定藏头与行数的诗句。只输出诗句，每句换行，不解释。""",
+    require_ending_poem=False,
+    use_persona_voice=False,
+)
 
-# API出错文案
-ERROR_MESSAGES = [
-    "（扶额）本猫脑中墨线打了个结...容本猫缓缓，稍后再来~",
-    "（揉太阳穴）哎呀，本猫今日诗兴不佳，改日再来吧~",
-    "（打哈欠）本猫困了，让本猫休息一下再说...",
-    "（晃酒壶）本猫喝多了，脑子转不动了，稍等片刻~",
-]
+ERROR_MESSAGES = GENERATION_FAILURE_MESSAGES
 
 
 APP_TIMEZONE = ZoneInfo("Asia/Shanghai")
@@ -394,7 +403,7 @@ async def handle_love(bot: Bot, event: MessageEvent):
 要求：
 1. 要有文艺气息，但又带点土味的反差萌
 2. 可以用古诗词的意境来表达现代的撩人
-3. 花花公子风格，有点油腻但又有点可爱
+3. 带一点李太白给式风流调侃，可爱但不要油腻
 4. 结尾附带一首表白的打油诗或俳句
 5. 不要重复之前说过的情话，要有新意"""
 
@@ -486,7 +495,7 @@ async def handle_acrostic(bot: Bot, event: MessageEvent, args: Message = Command
 
 请直接输出诗句，每句换行，不要有其他解释。"""
 
-    reply = await call_api(prompt, system="你是一位精通古典诗词的诗人。")
+    reply = await call_api(prompt, system=ACROSTIC_SYSTEM_PROMPT)
     
     if reply:
         await acrostic_love.finish(

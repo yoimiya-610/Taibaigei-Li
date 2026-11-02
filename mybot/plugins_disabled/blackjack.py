@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="legacy_blackjack",
+    name="纸牌挑战",
+    default_enabled=False,
+    scope="group",
+    permission_level=4,
+    data_files=("data/paid_rounds.json", "data/points.json"),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 import time
 from nonebot import on_command
@@ -7,13 +21,19 @@ from nonebot.adapters.onebot.v11 import Message
 from nonebot.rule import Rule
 from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.help_registry import HelpItem
-from mybot.plugins.points import get_points, spend_points, add_points
+from mybot.common.accounting import ASSET_POINTS, get_points
+from mybot.common.paid_rounds import (
+    PaidRoundService,
+    new_round_id,
+    register_recovery_adapter,
+)
 from mybot.plugins.rate_limit import check_game_limit, get_limit_message
 from mybot.common.logger import get_plugin_logger
 
 
 logger = get_plugin_logger(__name__)
 FEATURE_KEY = "legacy_blackjack"
+GAME_TYPE = "blackjack"
 MAX_BET = 100
 NORMAL_WIN_PAYOUT = 2.0
 BLACKJACK_PAYOUT = 3.0
@@ -43,6 +63,36 @@ FEATURE_RULE = Rule(_feature_enabled)
 
 # 存储进行中的游戏 {group_id_user_id: {"cards": [], "dealer": [], "bet": int, "status": str}}
 active_games = {}
+
+
+def _round_service() -> PaidRoundService:
+    return PaidRoundService()
+
+
+def _restore_round(round_record: dict, service: PaidRoundService) -> None:
+    game = round_record["payload"]
+    game["round_id"] = round_record["round_id"]
+    game_key = f"{round_record['group_id']}_{round_record['creator_id']}"
+    active_games[game_key] = game
+
+
+def _round_is_loaded(round_record: dict) -> bool:
+    game_key = f"{round_record['group_id']}_{round_record['creator_id']}"
+    return active_games.get(game_key, {}).get("round_id") == round_record["round_id"]
+
+
+def _discard_round(round_record: dict, service: PaidRoundService) -> None:
+    game_key = f"{round_record['group_id']}_{round_record['creator_id']}"
+    if active_games.get(game_key, {}).get("round_id") == round_record["round_id"]:
+        active_games.pop(game_key, None)
+
+
+register_recovery_adapter(
+    GAME_TYPE,
+    restore=_restore_round,
+    is_loaded=_round_is_loaded,
+    discard=_discard_round,
+)
 
 # 冷却时间
 cooldown = {}
@@ -238,10 +288,6 @@ async def handle_start_bj(bot: Bot, event: MessageEvent, args: Message = Command
     if bet_amount > MAX_BET:
         await start_bj.finish("（摇手指）单次最多100积分！文娱有度~")
     
-    # 扣除积分
-    spend_points(user_id, group_id, bet_amount)
-    cooldown[game_key] = now
-    
     # 创建牌组并发牌
     deck = create_deck()
     player_cards = [deal_card(deck), deal_card(deck)]
@@ -250,14 +296,35 @@ async def handle_start_bj(bot: Bot, event: MessageEvent, args: Message = Command
     player_value = hand_value(player_cards)
     
     # 存储游戏状态
-    active_games[game_key] = {
+    game = {
         "cards": player_cards,
         "dealer": dealer_cards,
         "deck": deck,
         "bet": bet_amount,
         "nickname": nickname,
-        "group_id": group_id
+        "group_id": group_id,
+        "user_id": user_id,
     }
+    service = _round_service()
+    round_id = new_round_id(GAME_TYPE)
+    game["round_id"] = round_id
+    service.create_round(
+        round_id=round_id,
+        game_type=GAME_TYPE,
+        mode="personal",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_POINTS,
+        feature_key=FEATURE_KEY,
+        payload=game,
+        participants=[{"user_id": user_id, "amount": bet_amount}],
+    )
+    charge = service.freeze_participant(round_id, user_id)
+    if not charge["ok"]:
+        service.refund_round(round_id, reason="insufficient_balance")
+        await start_bj.finish(f"（摇头）积分不够...你只有 {charge['balance']} 积分，先去签到吧~")
+    active_games[game_key] = game
+    cooldown[game_key] = now
     
     start_msg = random.choice(START_MESSAGES)
     
@@ -300,6 +367,7 @@ async def handle_hit(bot: Bot, event: MessageEvent):
     # 发一张牌
     new_card = deal_card(game["deck"])
     game["cards"].append(new_card)
+    _round_service().update_payload(game["round_id"], game)
     
     player_value = hand_value(game["cards"])
     deal_msg = random.choice(DEAL_MESSAGES)
@@ -350,13 +418,20 @@ async def end_game(bot: Bot, event: MessageEvent, game_key: str, reason: str):
     bet_amount = game["bet"]
     nickname = game["nickname"]
     group_id = game["group_id"]
-    user_id = game_key.split("_", 1)[1]
+    user_id = game["user_id"]
     
     player_value = hand_value(player_cards)
     
     # 玩家爆牌直接暂落后
     if reason == "bust":
-        del active_games[game_key]
+        service = _round_service()
+        service.prepare_settlement(
+            game["round_id"],
+            result={"reason": reason, "player_cards": player_cards, "player_value": player_value},
+            payouts={user_id: 0},
+        )
+        service.settle_round(game["round_id"])
+        active_games.pop(game_key, None)
         new_points = get_points(user_id, group_id)
         
         comment = random.choice(BUST_MESSAGES)
@@ -418,10 +493,6 @@ async def end_game(bot: Bot, event: MessageEvent, game_key: str, reason: str):
         comment = random.choice(TIE_MESSAGES)
         poem = "两家点数恰相当，\n旧规此局便归庄。\n若想赢回这一手，\n改日再来见锋芒~"
     
-    # 发放奖励
-    if win_amount > 0:
-        add_points(user_id, group_id, win_amount)
-    
     # 计算盈亏
     profit = win_amount - bet_amount
     if profit > 0:
@@ -431,8 +502,21 @@ async def end_game(bot: Bot, event: MessageEvent, game_key: str, reason: str):
     else:
         profit_text = "±0"
     
-    # 删除游戏
-    del active_games[game_key]
+    service = _round_service()
+    service.prepare_settlement(
+        game["round_id"],
+        result={
+            "reason": reason,
+            "player_cards": player_cards,
+            "dealer_cards": dealer_cards,
+            "player_value": player_value,
+            "dealer_value": dealer_value,
+            "payout": win_amount,
+        },
+        payouts={user_id: win_amount},
+    )
+    service.settle_round(game["round_id"])
+    active_games.pop(game_key, None)
     
     new_points = get_points(user_id, group_id)
     
@@ -473,12 +557,16 @@ async def handle_fold(bot: Bot, event: MessageEvent):
     bet_amount = game["bet"]
     nickname = game["nickname"]
     
-    # 弃牌只退一半
+    # 弃牌只退一半；冻结本金结清后用稳定派奖交易号返还。
     refund = bet_amount // 2
-    if refund > 0:
-        add_points(user_id, group_id, refund)
-    
-    del active_games[game_key]
+    service = _round_service()
+    service.prepare_settlement(
+        game["round_id"],
+        result={"reason": "fold", "refund": refund},
+        payouts={user_id: refund},
+    )
+    service.settle_round(game["round_id"])
+    active_games.pop(game_key, None)
     
     new_points = get_points(user_id, group_id)
     

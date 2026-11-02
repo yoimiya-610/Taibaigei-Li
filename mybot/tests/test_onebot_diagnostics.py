@@ -3,14 +3,16 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import mybot.bot  # noqa: F401
+from nonebot.adapters.onebot.v11 import Message
 
 from mybot.common.help_registry import collect_help_items
 from mybot.common.onebot_capabilities import (
     OneBotCapabilityRegistry,
     probe_onebot_connection,
 )
-from mybot.plugins import onebot_diagnostics
-from mybot.plugins.onebot_diagnostics import render_system_diagnostic
+from mybot.common.data_health import build_system_diagnostic
+from mybot.plugins import data_diagnostics as onebot_diagnostics
+from mybot.plugins.data_diagnostics import render_system_diagnostic
 
 class StopMatcher(Exception):
     pass
@@ -74,7 +76,7 @@ class OneBotDiagnosticTest(unittest.IsolatedAsyncioTestCase):
             registry=registry,
         )
 
-        rendered = render_system_diagnostic(snapshot)
+        rendered = render_system_diagnostic(build_system_diagnostic(), snapshot)
 
         self.assertIn("NapCat.Onebot 4.8.95", rendered)
         self.assertIn("名片点赞：可用（supported）", rendered)
@@ -101,7 +103,7 @@ class OneBotDiagnosticTest(unittest.IsolatedAsyncioTestCase):
         ):
             await onebot_diagnostics.handle_system_diagnostic(FakeEvent())
 
-        finish.assert_awaited_once_with("（合上诊脉簿）此页只交系统掌柜过目。")
+        finish.assert_awaited_once_with("（合上总册）此卷只交系统掌柜过目。")
 
     async def test_admin_receives_sanitized_summary(self):
         finish = AsyncMock(side_effect=StopMatcher)
@@ -110,15 +112,15 @@ class OneBotDiagnosticTest(unittest.IsolatedAsyncioTestCase):
             patch.object(onebot_diagnostics.system_diagnostic, "finish", finish),
             self.assertRaises(StopMatcher),
         ):
-            await onebot_diagnostics.handle_system_diagnostic(FakeEvent())
+            await onebot_diagnostics.handle_system_diagnostic(FakeEvent(), Message())
 
         rendered = finish.await_args.args[0]
         self.assertIn("李太白给·系统诊断", rendered)
 
     def test_admin_only_command_is_not_listed_in_public_help(self):
-        self.assertTrue(onebot_diagnostics.HELP_ITEMS[0].system_admin_only)
+        self.assertTrue(all(item.system_admin_only for item in onebot_diagnostics.HELP_ITEMS if "/系统诊断" in item.text))
         public_texts = {item.text for _, _, item in collect_help_items()}
-        self.assertNotIn("/系统诊断 - 查看 OneBot 连接与能力摘要", public_texts)
+        self.assertFalse(any("/系统诊断" in text for text in public_texts))
 
 
 if __name__ == "__main__":

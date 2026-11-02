@@ -183,7 +183,7 @@ class StartupPreflightTest(unittest.TestCase):
                 },
                 env_file=env_file,
                 runtime_directories=self._paths(root),
-                python_version=(3, 9, 18),
+                python_version=(3, 10, 16),
             )
 
         self.assertTrue(report.has_errors)

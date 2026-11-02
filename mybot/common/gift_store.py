@@ -4,7 +4,7 @@ import random
 from datetime import datetime
 from pathlib import Path
 
-from mybot.common.json_store import mutate_json
+from mybot.common.json_store import load_json, mutate_json
 
 
 BOT_ROOT = Path(__file__).resolve().parent.parent
@@ -267,6 +267,32 @@ def get_gift_inventory(user_id: str, group_id: str) -> dict:
         }
 
     return mutate_json(GIFT_INVENTORY_FILE, {}, mutator)
+
+
+def get_gift_inventory_snapshot(user_id: str, group_id: str) -> dict:
+    """Read an inventory without creating an empty user record."""
+
+    key = _gift_inventory_key(group_id, user_id)
+    data = load_json(GIFT_INVENTORY_FILE, {})
+    inventories = data.get("inventories", {}) if isinstance(data, dict) else {}
+    record = inventories.get(key, {}) if isinstance(inventories, dict) else {}
+    raw_items = record.get("items", {}) if isinstance(record, dict) else {}
+    items = {}
+    if isinstance(raw_items, dict):
+        for gift_id, raw_quantity in raw_items.items():
+            try:
+                quantity = int(raw_quantity)
+            except (TypeError, ValueError):
+                continue
+            if quantity > 0:
+                items[str(gift_id)] = quantity
+    return {
+        "user_id": str(record.get("user_id") or user_id) if isinstance(record, dict) else str(user_id),
+        "group_id": str(record.get("group_id") or group_id) if isinstance(record, dict) else str(group_id),
+        "items": items,
+        "last_draw_date": str(record.get("last_draw_date") or "") if isinstance(record, dict) else "",
+        "last_draw_gift": str(record.get("last_draw_gift") or "") if isinstance(record, dict) else "",
+    }
 
 
 def draw_daily_gift(user_id: str, group_id: str, *, now: datetime | None = None, rng: random.Random | None = None) -> dict:

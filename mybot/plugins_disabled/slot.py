@@ -1,3 +1,22 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="legacy_slot",
+    name="图案转盘",
+    default_enabled=False,
+    scope="group",
+    permission_level=4,
+    data_files=(
+        "data/paid_rounds.json",
+        "data/points.json",
+        "data/slot_stats.json",
+        "data/titles.json",
+    ),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 import time
 from nonebot import on_command
@@ -8,13 +27,15 @@ from nonebot.rule import Rule
 from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.help_registry import HelpItem
 from mybot.common.titles import get_new_title_achievements, record_slot_grape_or_better, sync_user_titles
-from mybot.plugins.points import get_points, spend_points, add_points
+from mybot.common.accounting import ASSET_POINTS, get_points
+from mybot.common.paid_rounds import PaidRoundService, new_round_id
 from mybot.plugins.rate_limit import check_game_limit, get_limit_message
 from mybot.common.logger import get_plugin_logger
 
 
 logger = get_plugin_logger(__name__)
 FEATURE_KEY = "legacy_slot"
+GAME_TYPE = "slot"
 HELP_ITEMS = (
     HelpItem("小游戏", "/图案转盘 金额 - 图案转盘", 20),
 )
@@ -222,18 +243,50 @@ async def handle_slot(bot: Bot, event: MessageEvent, args: Message = CommandArg(
         msg = random.choice(NO_POINTS_MESSAGES).format(points=points_info["current"])
         await slot.finish(msg)
     
-    spend_points(user_id, group_id, bet)
-    cooldown[cd_key] = now
-    
     result = spin()
     win_amount, win_type, win_symbol = calculate_win(result, bet)
+    service = PaidRoundService()
+    round_id = new_round_id(GAME_TYPE)
+    service.create_round(
+        round_id=round_id,
+        game_type=GAME_TYPE,
+        mode="instant",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_POINTS,
+        feature_key=FEATURE_KEY,
+        payload={
+            "symbols": result,
+            "bet": bet,
+            "win_type": win_type,
+            "win_symbol": win_symbol,
+        },
+        result={
+            "symbols": result,
+            "win_type": win_type,
+            "win_symbol": win_symbol,
+            "payout": win_amount,
+        },
+        participants=[
+            {
+                "user_id": user_id,
+                "amount": bet,
+                "payout_amount": win_amount,
+            }
+        ],
+    )
+    charge = service.freeze_participant(round_id, user_id)
+    if not charge["ok"]:
+        service.refund_round(round_id, reason="insufficient_balance")
+        await slot.finish(random.choice(NO_POINTS_MESSAGES).format(points=charge["balance"]))
+    service.settle_round(round_id)
+    cooldown[cd_key] = now
     hidden_title_text = ""
     
     pull_msg = random.choice(PULL_MESSAGES)
     
     if win_type == "triple":
         # 三同高分
-        add_points(user_id, group_id, win_amount)
         if PAYOUTS.get(win_symbol, 0) >= GRAPE_OR_BETTER_PAYOUT:
             record_slot_grape_or_better(user_id, group_id)
             title_status = sync_user_titles(user_id, group_id, get_points(user_id, group_id))
@@ -261,7 +314,6 @@ async def handle_slot(bot: Bot, event: MessageEvent, args: Message = CommandArg(
     
     elif win_type == "double":
         # 两同安慰分
-        add_points(user_id, group_id, win_amount)
         profit = win_amount - bet
         comment = random.choice(CONSOLATION_MESSAGES)
         result_text = f"🍒 安慰分！获得 {win_amount} 积分！（+{profit}）"

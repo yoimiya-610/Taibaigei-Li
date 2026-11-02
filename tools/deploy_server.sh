@@ -7,15 +7,14 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 BOT_DIR="$REPO_ROOT/mybot"
 
 BRANCH="${BOT_BRANCH:-main}"
-SCREEN_NAME="${BOT_SCREEN_NAME:-nonebot}"
-STOP_TIMEOUT="${BOT_STOP_TIMEOUT:-20}"
+SERVICE_NAME="${BOT_SERVICE_NAME:-taibaigei.service}"
+SYSTEMCTL_BIN="${BOT_SYSTEMCTL_BIN:-systemctl}"
 START_WAIT="${BOT_START_WAIT:-3}"
 
 runtime_state_dir=""
 runtime_paths=()
-bot_was_running=false
-bot_stopped=false
-bot_started=false
+recovery_required=false
+startup_attempted=false
 
 log() {
     printf '[deploy] %s\n' "$*"
@@ -23,7 +22,7 @@ log() {
 
 fail() {
     printf '[deploy] error: %s\n' "$*" >&2
-    exit 1
+    return 1
 }
 
 require_command() {
@@ -55,32 +54,81 @@ assert_no_local_code_changes() {
     )
 }
 
-screen_session_active() {
-    screen -list 2>/dev/null | grep -Eq "[[:space:]][0-9]+\\.${SCREEN_NAME}[[:space:]]"
+service_active() {
+    "$SYSTEMCTL_BIN" is-active --quiet "$SERVICE_NAME"
+}
+
+service_failed() {
+    "$SYSTEMCTL_BIN" is-failed --quiet "$SERVICE_NAME"
+}
+
+service_main_pid() {
+    "$SYSTEMCTL_BIN" show "$SERVICE_NAME" --property=MainPID --value
+}
+
+service_healthy() {
+    local main_pid
+
+    service_active || return 1
+    main_pid="$(service_main_pid)" || return 1
+    [[ "$main_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    kill -0 "$main_pid" 2>/dev/null
+}
+
+print_service_diagnostics() {
+    if service_failed; then
+        printf '[deploy] error: systemd service %q is in failed state.\n' \
+            "$SERVICE_NAME" >&2
+    fi
+    "$SYSTEMCTL_BIN" status "$SERVICE_NAME" --no-pager -l >&2 || true
+    if command -v journalctl >/dev/null 2>&1; then
+        journalctl -u "$SERVICE_NAME" -n 80 --no-pager >&2 || true
+    fi
+}
+
+ensure_service_loaded() {
+    local load_state
+
+    load_state="$(
+        "$SYSTEMCTL_BIN" show "$SERVICE_NAME" --property=LoadState --value
+    )" || fail "cannot inspect systemd service '$SERVICE_NAME'."
+    [[ "$load_state" == "loaded" ]] \
+        || fail "systemd service '$SERVICE_NAME' is not loaded (state: ${load_state:-unknown})."
 }
 
 stop_bot() {
-    if ! screen_session_active; then
-        log "no active Screen session named '$SCREEN_NAME'; continuing."
-        return
+    if service_active; then
+        log "stopping systemd service '$SERVICE_NAME'."
+    else
+        log "systemd service '$SERVICE_NAME' is not active; clearing any residual state."
     fi
 
-    bot_was_running=true
-    log "stopping bot Screen session '$SCREEN_NAME'."
-    screen -S "$SCREEN_NAME" -p 0 -X stuff $'\003'
+    recovery_required=true
+    "$SYSTEMCTL_BIN" stop "$SERVICE_NAME"
 
-    local deadline=$((SECONDS + STOP_TIMEOUT))
-    while screen_session_active && (( SECONDS < deadline )); do
-        sleep 1
-    done
+    if service_active; then
+        fail "systemd service '$SERVICE_NAME' remained active after stop."
+    fi
+}
 
-    if screen_session_active; then
-        log "bot did not exit within ${STOP_TIMEOUT}s; closing its Screen session."
-        screen -S "$SCREEN_NAME" -X quit
+start_bot() {
+    startup_attempted=true
+    log "starting systemd service '$SERVICE_NAME'."
+
+    if ! "$SYSTEMCTL_BIN" start "$SERVICE_NAME"; then
+        print_service_diagnostics
+        return 1
     fi
 
-    bot_stopped=true
-    screen -wipe >/dev/null 2>&1 || true
+    sleep "$START_WAIT"
+    if ! service_healthy; then
+        printf '[deploy] error: systemd service %q did not become healthy after %ss.\n' \
+            "$SERVICE_NAME" "$START_WAIT" >&2
+        print_service_diagnostics
+        return 1
+    fi
+
+    log "systemd service '$SERVICE_NAME' is active with MainPID $(service_main_pid)."
 }
 
 move_runtime_state_if_needed() {
@@ -94,7 +142,7 @@ move_runtime_state_if_needed() {
 
         if [[ -n "$current_files" && -z "$incoming_files" && -d "$REPO_ROOT/$path" ]]; then
             if [[ -z "$runtime_state_dir" ]]; then
-                runtime_state_dir="${RUNTIME_STATE_ROOT:-$HOME}/qqbot_runtime_state_$(date +%Y%m%d_%H%M%S)_$$"
+                runtime_state_dir="${RUNTIME_STATE_ROOT:-$HOME}/taibaigei_runtime_state_$(date +%Y%m%d_%H%M%S)_$$"
                 mkdir -p "$runtime_state_dir"
                 log "incoming update stops tracking runtime state; preserving it in $runtime_state_dir."
             fi
@@ -123,14 +171,26 @@ restore_runtime_state() {
 
 on_error() {
     local exit_code=$?
+    trap - ERR
+    set +e
 
     if [[ -n "$runtime_state_dir" ]]; then
         log "deployment failed; restoring preserved runtime state."
         restore_runtime_state || true
     fi
 
-    if $bot_was_running && $bot_stopped && ! $bot_started; then
-        log "the bot remains stopped; resolve the error, then run this script again."
+    if $recovery_required && ! service_healthy; then
+        if $startup_attempted; then
+            log "service startup failed; no second instance was started."
+            log "systemd remains responsible for the configured restart policy."
+        else
+            log "deployment failed after the service was stopped; attempting automatic recovery."
+            if start_bot; then
+                log "automatic service recovery succeeded; deployment changes may still be incomplete."
+            else
+                log "automatic service recovery failed; inspect '$SERVICE_NAME' before retrying."
+            fi
+        fi
     fi
 
     exit "$exit_code"
@@ -139,13 +199,14 @@ on_error() {
 trap on_error ERR
 
 require_command git
-require_command screen
 require_command uv
+require_command "$SYSTEMCTL_BIN"
 
 git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "not a Git repository: $REPO_ROOT"
 [[ -f "$BOT_DIR/bot.py" ]] || fail "bot entry point not found: $BOT_DIR/bot.py"
 
 assert_no_local_code_changes
+ensure_service_loaded
 
 log "fetching origin/$BRANCH while the current bot stays online."
 git -C "$REPO_ROOT" fetch --prune origin "$BRANCH"
@@ -154,7 +215,18 @@ current_commit="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 incoming_commit="$(git -C "$REPO_ROOT" rev-parse FETCH_HEAD)"
 
 if [[ "$current_commit" == "$incoming_commit" ]]; then
-    log "already at the latest origin/$BRANCH; no restart needed."
+    if service_healthy; then
+        log "already at the latest origin/$BRANCH; service is healthy, no restart needed."
+        exit 0
+    fi
+
+    log "already at the latest origin/$BRANCH, but the service is not healthy."
+    stop_bot
+    log "synchronizing locked Python dependencies before service recovery."
+    uv sync --project "$BOT_DIR" --locked
+    start_bot
+    recovery_required=false
+    log "service recovery complete. NapCat was not restarted."
     exit 0
 fi
 
@@ -172,13 +244,7 @@ uv sync --project "$BOT_DIR" --locked
 
 restore_runtime_state
 
-log "starting bot Screen session '$SCREEN_NAME'."
-screen -dmS "$SCREEN_NAME" bash -lc "export PYTHONIOENCODING=utf-8; cd $(printf '%q' "$BOT_DIR") && exec uv run python bot.py"
-bot_started=true
-
-sleep "$START_WAIT"
-if ! screen_session_active; then
-    fail "bot exited during startup; inspect its logs before retrying."
-fi
+start_bot
+recovery_required=false
 
 log "update complete. NapCat was not restarted."

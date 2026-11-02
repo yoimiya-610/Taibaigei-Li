@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="practical_tools",
+    name="实用功能",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    data_files=("data/points.json", "data/paid_rounds.json"),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, Message, MessageEvent
 from nonebot.params import CommandArg
@@ -35,7 +49,18 @@ from mybot.common.practical_tools import (
     url_encode,
     vigenere_transform,
 )
-from mybot.plugins.points import get_points, refund_points, spend_points
+from mybot.common.usage_policy import (
+    AI_REQUEST_QUOTA,
+    OPERATION_COMPLETED,
+    PaidOperationInsufficientBalance,
+    PaidOperationService,
+    PaidOperationSnapshot,
+    QuotaPlan,
+    UsageQuotaExceeded,
+    paid_operation_processing_message,
+    paid_operation_refund_message,
+    quota_wait_message,
+)
 
 
 logger = get_plugin_logger(__name__)
@@ -166,7 +191,13 @@ def _event_group_id(event: MessageEvent) -> str | None:
     return None
 
 
-async def _charge_points_or_finish(matcher, event: MessageEvent) -> tuple[str, str]:
+async def _charge_points_or_finish(
+    matcher,
+    event: MessageEvent,
+    request_key: str,
+    *,
+    quota_plan: QuotaPlan | None = None,
+) -> tuple[str, str, PaidOperationService, PaidOperationSnapshot]:
     group_id = _event_group_id(event)
     if not group_id:
         await matcher.finish(
@@ -175,18 +206,32 @@ async def _charge_points_or_finish(matcher, event: MessageEvent) -> tuple[str, s
         )
 
     user_id = event.get_user_id()
-    points = get_points(user_id, group_id)
-    if points["current"] < PRACTICAL_TOOL_COST:
+    operation_service = PaidOperationService()
+    try:
+        operation = operation_service.begin(
+            feature_key="practical_tools",
+            user_id=user_id,
+            group_id=group_id,
+            cost=PRACTICAL_TOOL_COST,
+            request_key=request_key,
+            quota_plan=quota_plan,
+        )
+    except UsageQuotaExceeded as exc:
+        await matcher.finish(quota_wait_message(exc.decision))
+    except PaidOperationInsufficientBalance as exc:
         await matcher.finish(
-            f"（翻账本）这一回要 {PRACTICAL_TOOL_COST} 积分，阁下账上只有 {points['current']} 积分。\n"
+            f"（翻账本）这一回要 {PRACTICAL_TOOL_COST} 积分，阁下账上只有 {exc.balance} 积分。\n"
             "『先攒几枚杯中月，再请本猫磨短章。』"
         )
-    if not spend_points(user_id, group_id, PRACTICAL_TOOL_COST):
+    except Exception as exc:
+        logger.exception(f"实用小令开账失败 user_id={user_id} group_id={group_id}: {exc}")
         await matcher.finish(
             "（算盘一停）这笔墨资暂时落不了账，请稍后再试。\n"
             "『账页偶逢风作乱，待墨痕干再开章。』"
         )
-    return user_id, group_id
+    if operation.existing:
+        await matcher.finish(paid_operation_processing_message())
+    return user_id, group_id, operation_service, operation
 
 
 async def _run_practical_task(matcher, event: MessageEvent, task_key: str, raw_text: str, *, style: str = "") -> None:
@@ -214,7 +259,12 @@ async def _run_practical_task(matcher, event: MessageEvent, task_key: str, raw_t
             "『案前灯火未添满，且待明时再落章。』"
         )
 
-    user_id, group_id = await _charge_points_or_finish(matcher, event)
+    user_id, group_id, operation_service, operation = await _charge_points_or_finish(
+        matcher,
+        event,
+        f"ai:{task_key}:{style}:{text}",
+        quota_plan=AI_REQUEST_QUOTA,
+    )
     prompt = build_task_prompt(task_key, text, style=style)
     try:
         reply = await prompt_completion(
@@ -224,16 +274,30 @@ async def _run_practical_task(matcher, event: MessageEvent, task_key: str, raw_t
             temperature=0.3,
             timeout=60,
             raise_errors=True,
+            usage_checked=True,
         )
         if not reply:
             raise RuntimeError(f"empty {task_key} reply")
     except Exception as exc:
-        refund_points(user_id, group_id, PRACTICAL_TOOL_COST)
         logger.exception(f"{task.command}失败 user_id={user_id} group_id={group_id}: {exc}")
-        await matcher.finish(
-            f"（收回案头笔）这一卷暂未写成，{PRACTICAL_TOOL_COST} 积分已原样退回。\n"
-            "『墨未成章钱先返，明灯再起续新篇。』"
-        )
+        try:
+            operation_service.refund(operation.operation_id, reason=f"{task_key}_failed")
+        except Exception as refund_exc:
+            logger.exception(f"实用小令退款待恢复 operation_id={operation.operation_id}: {refund_exc}")
+            await matcher.finish("（收回案头笔）这一卷暂未写成，账页尚在核对，请勿重复递卷。")
+        await matcher.finish(paid_operation_refund_message(PRACTICAL_TOOL_COST))
+
+    try:
+        operation_service.complete(operation.operation_id, result_key=reply)
+    except Exception as exc:
+        logger.exception(f"实用小令结账失败 operation_id={operation.operation_id}: {exc}")
+        try:
+            current = operation_service.get(operation.operation_id)
+        except Exception as status_exc:
+            logger.exception(f"实用小令状态核对失败 operation_id={operation.operation_id}: {status_exc}")
+            await matcher.finish("（按住案卷）短章已成，墨账尚未干透，请勿重复递卷。")
+        if current.status != OPERATION_COMPLETED:
+            await matcher.finish("（按住案卷）短章已成，墨账尚未干透，请勿重复递卷。")
 
     await matcher.finish(
         f"🧰 李太白给·{task.title} 🧰\n"
@@ -254,7 +318,22 @@ async def _run_local_crypto(matcher, event: MessageEvent, title: str, mode_label
             "『密札宜短不宜繁，三行风月好收藏。』"
         )
 
-    await _charge_points_or_finish(matcher, event)
+    _user_id, _group_id, operation_service, operation = await _charge_points_or_finish(
+        matcher,
+        event,
+        f"local:{title}:{mode_label}:{input_text}",
+    )
+    try:
+        operation_service.complete(operation.operation_id, result_key=result)
+    except Exception as exc:
+        logger.exception(f"本地实用小令结账失败 operation_id={operation.operation_id}: {exc}")
+        try:
+            current = operation_service.get(operation.operation_id)
+        except Exception as status_exc:
+            logger.exception(f"本地实用小令状态核对失败 operation_id={operation.operation_id}: {status_exc}")
+            await matcher.finish("（按住密卷）密文已成，墨账尚未干透，请勿重复递卷。")
+        if current.status != OPERATION_COMPLETED:
+            await matcher.finish("（按住密卷）密文已成，墨账尚未干透，请勿重复递卷。")
     await matcher.finish(
         f"🧰 李太白给·{title} 🧰\n"
         "======================\n"

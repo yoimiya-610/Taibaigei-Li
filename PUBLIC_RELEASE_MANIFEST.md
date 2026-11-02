@@ -52,3 +52,11 @@ It did not contain a copyright or license notice establishing redistribution rig
 - empty public defaults, an empty source blacklist, required public documents, and synchronized version metadata.
 
 CI runs this check together with locked dependency sync, compilation, the full test suite, deployment-script syntax validation, and an application-entry smoke test.
+
+## Product update v0.9.0
+
+The product update integrates 172 reviewed product files from an export-v2-validated candidate. The source product version is 0.8.2. `docs/public-import-v0.9.0.json` records the source revision and SHA-256 of each sanitized input, before public integration changes. The deployment script and its integration tests were separately reviewed from the same source revision and adapted to the public service name.
+
+Public startup preflight, OneBot capability probing, CI, licensing and repository history remain intact. The earlier OneBot-only diagnostic command is consolidated into the expanded system diagnostic command, with its authorization and redaction regressions retained. Group-specific acquaintance content, deployment secrets, runtime files and private synchronization automation are excluded. No new third-party installer or redistributed script is introduced.
+
+The final public content intentionally differs from input hashes for integration, synchronized version metadata, deployment defaults, public documentation and runtime compatibility. This is a branch-based product update, not an overwrite of the public checkout or its history.

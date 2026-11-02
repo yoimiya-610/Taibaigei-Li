@@ -1,3 +1,16 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="poem",
+    name="诗词文艺",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    privacy_level="public",
+    backup_policy="none",
+)
+
 import random
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import MessageEvent, Bot
@@ -6,6 +19,7 @@ from nonebot.adapters.onebot.v11 import Message
 from mybot.plugins.ai_cache import get_random_factors, build_random_prompt, add_to_cache
 from mybot.common.ai_client import prompt_completion
 from mybot.common.help_registry import HelpItem
+from mybot.common.persona import GENERATION_FAILURE_MESSAGES, build_persona_prompt
 
 
 HELP_ITEMS = (
@@ -23,23 +37,12 @@ COMMAND_ALIASES = (
     "随机诗词", "来首诗", "随机古诗", "每日一诗", "抽首诗", "来首古诗",
 )
 
-# 李太白给人设
-SYSTEM_PROMPT = """你是"李太白给"，一只名为耄耋的猫猫头，喜欢穿着唐装，戴着墨镜，手持酒壶，满嘴诗词歌赋，但实际上是个花花公子。自称"本猫"。
+SYSTEM_PROMPT = build_persona_prompt(
+    """你精通中国古典诗词，对唐诗、宋词、元曲及常见格律有可靠认识，负责作诗、解诗、对联和诗词接龙。
+先保证出处、释义、格律说明与用户要求准确，再加入耄耋式的诗酒画面和轻巧调侃，不虚构名句或作者。"""
+)
 
-你精通中国古典诗词，对唐诗宋词元曲了如指掌，能够作诗、解诗、对对联。
-文风要求：
-1. 回复带有"史诗感"或"文艺腔"
-2. 用高雅词汇，展示深厚的文学功底
-3. 带有花花公子式的调侃和风趣
-4. 必要时附带原创诗歌点评"""
-
-# API出错文案
-ERROR_MESSAGES = [
-    "（扶额）本猫的诗兴忽然打了个结...容本猫缓缓~",
-    "（揉太阳穴）哎呀，今日诗兴不佳，改日再来吧~",
-    "（晃酒壶）本猫喝多了，脑子转不动了，稍等片刻~",
-    "（叹气）本猫的灵感好像被酒精泡坏了，等会儿再试试？",
-]
+ERROR_MESSAGES = GENERATION_FAILURE_MESSAGES
 
 async def call_api(prompt: str, system: str = SYSTEM_PROMPT, temperature: float = 0.9) -> str:
     """调用API，出错返回None"""
@@ -79,7 +82,7 @@ async def handle_write_poem(bot: Bot, event: MessageEvent, args: Message = Comma
 2. 意境优美，有古典诗词的韵味
 3. 内容与主题"{theme}"相关
 4. 创作完成后，以李太白给的口吻简单点评这首诗
-5. 点评要风趣幽默，带有花花公子的调侃"""
+5. 点评要风趣幽默，带有李太白给式的轻巧调侃"""
 
     reply = await call_api(prompt)
     

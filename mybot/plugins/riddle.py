@@ -1,11 +1,26 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="riddle",
+    name="猜谜",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    data_files=("data/points.json",),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 from nonebot import on_command, on_message
 from nonebot.adapters.onebot.v11 import MessageEvent, Bot, GroupMessageEvent
 from nonebot.rule import Rule
-from mybot.plugins.points import add_points
+from mybot.common.accounting import add_points
 from mybot.common.ai_client import prompt_completion
 from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.help_registry import HelpItem
+from mybot.common.persona import GENERATION_FAILURE_MESSAGES, build_persona_prompt
 from mybot.common.user_utils import get_nickname
 
 
@@ -26,13 +41,13 @@ active_riddles = {}
 used_riddles = {}
 MAX_HISTORY = 20  # 记录最近20个谜底
 
-# API出错文案
-ERROR_MESSAGES = [
-    "（扶额）本猫脑中墨线打了个结...容本猫缓缓，稍后再来~",
-    "（揉太阳穴）哎呀，本猫今日诗兴不佳，改日再来吧~",
-    "（打哈欠）本猫困了，让本猫休息一下再说...",
-    "（晃酒壶）本猫喝多了，脑子转不动了，稍等片刻~",
-]
+RIDDLE_SYSTEM_PROMPT = build_persona_prompt(
+    """你正在为李太白给生成一则可验证的中文谜题。严格按用户给定字段输出，不闲聊、不写额外诗句；谜底必须明确、唯一、适合群聊。""",
+    require_ending_poem=False,
+    use_persona_voice=False,
+)
+
+ERROR_MESSAGES = GENERATION_FAILURE_MESSAGES
 
 # 开局文案
 START_MESSAGES = [
@@ -102,7 +117,12 @@ async def generate_riddle(group_id: str) -> dict:
 答案：xxxxx（必须是一个明确的字或词）
 提示：xxxxx"""
 
-    content = await prompt_completion(prompt, max_tokens=200, temperature=1.0)
+    content = await prompt_completion(
+        prompt,
+        system=RIDDLE_SYSTEM_PROMPT,
+        max_tokens=200,
+        temperature=1.0,
+    )
     if not content:
         return None
 

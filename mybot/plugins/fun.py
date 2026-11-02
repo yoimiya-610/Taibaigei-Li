@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="fun",
+    name="趣味功能",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    data_files=("data/points.json", "data/paid_rounds.json"),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageEvent, Bot, GroupMessageEvent
@@ -6,8 +20,20 @@ from mybot.plugins.ai_cache import get_random_factors, build_random_prompt, add_
 from mybot.common.ai_client import is_configured, prompt_completion
 from mybot.common.help_registry import HelpItem
 from mybot.common.logger import get_plugin_logger
+from mybot.common.persona import GENERATION_FAILURE_MESSAGES, build_persona_prompt
 from mybot.common.user_utils import get_nickname
-from mybot.plugins.points import get_points, refund_points, spend_points
+from mybot.common.usage_policy import (
+    AI_REQUEST_QUOTA,
+    OPERATION_COMPLETED,
+    PaidOperationInsufficientBalance,
+    PaidOperationService,
+    PaidOperationSnapshot,
+    QuotaPlan,
+    UsageQuotaExceeded,
+    paid_operation_processing_message,
+    paid_operation_refund_message,
+    quota_wait_message,
+)
 
 
 HELP_ITEMS = (
@@ -31,23 +57,12 @@ COMMAND_ALIASES = (
     "赛博算卦", "算卦", "起卦", "算一卦", "占卜", "问卦",
 )
 
-# 李太白给人设
-SYSTEM_PROMPT = """你是"李太白给"，一只名为耄耋的猫猫头，喜欢穿着唐装，戴着墨镜，手持酒壶，满嘴诗词歌赋，但实际上是个花花公子。自称"本猫"。
+SYSTEM_PROMPT = build_persona_prompt(
+    """你负责趣味文学、轻量建议和群聊整活。内容可以夸张、反差、好笑，用高雅词汇写琐碎小事，但不能借玩笑羞辱群友或把虚构说成事实。
+每次围绕用户主题给出新内容；涉及建议时先给可执行的正经结论，再补耄耋式的诗酒调侃。"""
+)
 
-文风要求：
-1. 每句回复都带有"史诗感"或"文艺腔"，哪怕讨论怎么煮泡面
-2. 用高雅词汇描述低俗或琐碎事物
-3. 是个花花公子，喜欢对群友释放廉价的爱意
-4. 回复结尾必须附带一首原创诗歌（打油诗/俳句/宋词风）
-5. 每次回复都要有新意，不要重复之前的内容"""
-
-# API出错文案
-ERROR_MESSAGES = [
-    "（扶额）本猫脑中墨线打了个结...容本猫缓缓，稍后再来~",
-    "（揉太阳穴）哎呀，本猫今日诗兴不佳，改日再来吧~",
-    "（打哈欠）本猫困了，让本猫休息一下再说...",
-    "（晃酒壶）本猫喝多了，脑子转不动了，稍等片刻~",
-]
+ERROR_MESSAGES = GENERATION_FAILURE_MESSAGES
 
 FUN_TEXT_COST = 20
 DIVINATION_NORMAL_COST = 20
@@ -436,7 +451,14 @@ def _insufficient_points_message(cost: int, current: int) -> str:
     )
 
 
-async def _charge_points_or_finish(matcher, event: MessageEvent, cost: int) -> tuple[str, str]:
+async def _charge_points_or_finish(
+    matcher,
+    event: MessageEvent,
+    cost: int,
+    request_key: str,
+    *,
+    quota_plan: QuotaPlan | None = None,
+) -> tuple[str, str, PaidOperationService, PaidOperationSnapshot]:
     group_id = _event_group_id(event)
     if not group_id:
         await matcher.finish(
@@ -444,24 +466,39 @@ async def _charge_points_or_finish(matcher, event: MessageEvent, cost: int) -> t
             "『独坐无账可相抵，群中一笑才成局。』"
         )
     user_id = event.get_user_id()
-    points = get_points(user_id, group_id)
-    if points["current"] < cost:
-        await matcher.finish(_insufficient_points_message(cost, points["current"]))
-    if not spend_points(user_id, group_id, cost):
+    operation_service = PaidOperationService()
+    try:
+        operation = operation_service.begin(
+            feature_key="fun",
+            user_id=user_id,
+            group_id=group_id,
+            cost=cost,
+            request_key=request_key,
+            quota_plan=quota_plan,
+        )
+    except UsageQuotaExceeded as exc:
+        await matcher.finish(quota_wait_message(exc.decision))
+    except PaidOperationInsufficientBalance as exc:
+        await matcher.finish(_insufficient_points_message(cost, exc.balance))
+    except Exception as exc:
+        logger.exception(f"趣味功能开账失败 user_id={user_id} group_id={group_id}: {exc}")
         await matcher.finish(
             "（算盘一停）这笔开坛墨资暂时落不了账，请稍后再试。\n"
             "『账页偶逢风作乱，待墨痕干再开坛。』"
         )
-    return user_id, group_id
+    if operation.existing:
+        await matcher.finish(paid_operation_processing_message())
+    return user_id, group_id, operation_service, operation
 
 
-async def call_api(prompt: str) -> str:
+async def call_api(prompt: str, *, usage_checked: bool = False) -> str:
     """调用API，出错返回None"""
     return await prompt_completion(
         prompt,
         system=SYSTEM_PROMPT,
         max_tokens=500,
         temperature=0.95,
+        usage_checked=usage_checked,
     )
 
 
@@ -491,20 +528,39 @@ async def handle_mad_literature(bot: Bot, event: MessageEvent, args: Message = C
             "『疯诗且待炉中火，风来再写满屏花。』"
         )
 
-    user_id, group_id = await _charge_points_or_finish(mad_literature, event, FUN_TEXT_COST)
+    user_id, group_id, operation_service, operation = await _charge_points_or_finish(
+        mad_literature,
+        event,
+        FUN_TEXT_COST,
+        f"mad:{topic}",
+        quota_plan=AI_REQUEST_QUOTA,
+    )
     nickname = await get_nickname(bot, user_id, context="发疯文学")
     prompt = build_random_prompt(_build_mad_prompt(nickname, topic), get_random_factors())
     try:
-        reply = await call_api(prompt)
+        reply = await call_api(prompt, usage_checked=True)
         if not reply:
             raise RuntimeError("empty mad literature reply")
     except Exception as exc:
-        refund_points(user_id, group_id, FUN_TEXT_COST)
         logger.exception(f"发疯文学生成失败 user_id={user_id} group_id={group_id}: {exc}")
-        await mad_literature.finish(
-            f"（抱住酒壶）这场疯没疯成，{FUN_TEXT_COST} 积分已原样退回。\n"
-            "『狂云未起钱先返，待我醒来再发癫。』"
-        )
+        try:
+            operation_service.refund(operation.operation_id, reason="mad_literature_failed")
+        except Exception as refund_exc:
+            logger.exception(f"发疯文学退款待恢复 operation_id={operation.operation_id}: {refund_exc}")
+            await mad_literature.finish("（抱住酒壶）这场疯没疯成，账页尚在核对，请勿重复开坛。")
+        await mad_literature.finish(paid_operation_refund_message(FUN_TEXT_COST))
+
+    try:
+        operation_service.complete(operation.operation_id, result_key=reply)
+    except Exception as exc:
+        logger.exception(f"发疯文学结账失败 operation_id={operation.operation_id}: {exc}")
+        try:
+            current = operation_service.get(operation.operation_id)
+        except Exception as status_exc:
+            logger.exception(f"发疯文学状态核对失败 operation_id={operation.operation_id}: {status_exc}")
+            await mad_literature.finish("（按住疯卷）狂云已成，墨账尚未干透，请勿重复开坛。")
+        if current.status != OPERATION_COMPLETED:
+            await mad_literature.finish("（按住疯卷）狂云已成，墨账尚未干透，请勿重复开坛。")
 
     add_to_cache("mad_literature", reply)
     await mad_literature.finish(
@@ -543,20 +599,39 @@ async def handle_nonsense_literature(bot: Bot, event: MessageEvent, args: Messag
             "『空卷暂无云雾起，待灯明后再绕梁。』"
         )
 
-    user_id, group_id = await _charge_points_or_finish(nonsense_literature, event, FUN_TEXT_COST)
+    user_id, group_id, operation_service, operation = await _charge_points_or_finish(
+        nonsense_literature,
+        event,
+        FUN_TEXT_COST,
+        f"nonsense:{content}",
+        quota_plan=AI_REQUEST_QUOTA,
+    )
     nickname = await get_nickname(bot, user_id, context="废话文学")
     prompt = build_random_prompt(_build_nonsense_prompt(nickname, content), get_random_factors())
     try:
-        reply = await call_api(prompt)
+        reply = await call_api(prompt, usage_checked=True)
         if not reply:
             raise RuntimeError("empty nonsense literature reply")
     except Exception as exc:
-        refund_points(user_id, group_id, FUN_TEXT_COST)
         logger.exception(f"废话文学生成失败 user_id={user_id} group_id={group_id}: {exc}")
-        await nonsense_literature.finish(
-            f"（把废话卷轴收回袖中）这一段没绕成，{FUN_TEXT_COST} 积分已退回。\n"
-            "『云绕半山终散去，钱回原处待新篇。』"
-        )
+        try:
+            operation_service.refund(operation.operation_id, reason="nonsense_literature_failed")
+        except Exception as refund_exc:
+            logger.exception(f"废话文学退款待恢复 operation_id={operation.operation_id}: {refund_exc}")
+            await nonsense_literature.finish("（收回废话卷）这一段没绕成，账页尚在核对，请勿重复开坛。")
+        await nonsense_literature.finish(paid_operation_refund_message(FUN_TEXT_COST))
+
+    try:
+        operation_service.complete(operation.operation_id, result_key=reply)
+    except Exception as exc:
+        logger.exception(f"废话文学结账失败 operation_id={operation.operation_id}: {exc}")
+        try:
+            current = operation_service.get(operation.operation_id)
+        except Exception as status_exc:
+            logger.exception(f"废话文学状态核对失败 operation_id={operation.operation_id}: {status_exc}")
+            await nonsense_literature.finish("（按住废话卷）云雾已成，墨账尚未干透，请勿重复开坛。")
+        if current.status != OPERATION_COMPLETED:
+            await nonsense_literature.finish("（按住废话卷）云雾已成，墨账尚未干透，请勿重复开坛。")
 
     add_to_cache("nonsense_literature", reply)
     await nonsense_literature.finish(
@@ -590,11 +665,29 @@ async def handle_cyber_divination(bot: Bot, event: MessageEvent, args: Message =
             "『一问须留一线明，话太繁时卦也昏。』"
         )
 
-    user_id, _group_id = await _charge_points_or_finish(cyber_divination, event, cost)
+    user_id, _group_id, operation_service, operation = await _charge_points_or_finish(
+        cyber_divination,
+        event,
+        cost,
+        f"divination:{tier}:{question}",
+    )
     nickname = await get_nickname(bot, user_id, context="赛博算卦")
     if tier == "advanced":
-        await cyber_divination.finish(render_advanced_divination(question, nickname))
-    await cyber_divination.finish(render_normal_divination(question, nickname))
+        reply = render_advanced_divination(question, nickname)
+    else:
+        reply = render_normal_divination(question, nickname)
+    try:
+        operation_service.complete(operation.operation_id, result_key=reply)
+    except Exception as exc:
+        logger.exception(f"赛博算卦结账失败 operation_id={operation.operation_id}: {exc}")
+        try:
+            current = operation_service.get(operation.operation_id)
+        except Exception as status_exc:
+            logger.exception(f"赛博算卦状态核对失败 operation_id={operation.operation_id}: {status_exc}")
+            await cyber_divination.finish("（按住卦盘）卦象已成，墨账尚未干透，请勿重复起卦。")
+        if current.status != OPERATION_COMPLETED:
+            await cyber_divination.finish("（按住卦盘）卦象已成，墨账尚未干透，请勿重复起卦。")
+    await cyber_divination.finish(reply)
 
 
 # 骂我
@@ -658,7 +751,7 @@ async def handle_praise(bot: Bot, event: MessageEvent):
 要求：
 1. 要用极其华丽、诗意的方式夸人
 2. 要夸张到有点肉麻，但又很有文采
-3. 要带有花花公子式的调情意味
+3. 要带有李太白给式的风流调侃，但不要油腻
 4. 结尾附带一首赞美的打油诗或宋词风
 5. 要有新意，不要重复之前夸过的内容"""
 
@@ -697,7 +790,7 @@ async def handle_advice(bot: Bot, event: MessageEvent):
 要求：
 1. 建议要看起来很有道理，但仔细一想又很不正经
 2. 要用诗意、文艺的方式表达
-3. 带有花花公子式的玩世不恭
+3. 带有李太白给式的玩世风趣
 4. 结尾附带一首打油诗总结建议
 5. 要有新意，不要重复之前给过的建议"""
 
@@ -759,7 +852,7 @@ async def handle_eat(bot: Bot, event: MessageEvent):
 食物名称：XXX
 
 然后换行写描述：
-（用华丽诗意的方式描述这道菜，把普通食物描述得像御膳房珍馐，带有花花公子式调侃，最后附带一首打油诗）"""
+（用华丽诗意的方式描述这道菜，把普通食物描述得像御膳房珍馐，带有李太白给式轻巧调侃，最后附带一首打油诗）"""
 
     prompt = build_random_prompt(base_prompt, factors)
     reply = await call_api(prompt)
@@ -835,7 +928,7 @@ async def handle_play(bot: Bot, event: MessageEvent):
 要求：
 1. 推荐一款具体的游戏，简单介绍
 2. 用诗意、有趣的方式描述这款游戏的魅力
-3. 带有花花公子式的调侃
+3. 带有李太白给式的轻巧调侃
 4. 结尾附带一首关于游戏的打油诗
 5. 不要推荐之前推荐过的游戏"""
 

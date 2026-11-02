@@ -44,6 +44,7 @@ ws://127.0.0.1:8081/onebot/v11/ws
 
 NoneBot 的 `SUPERUSERS` 也会被权限判断识别。不要把任何真实 ID 写入公开模板、测试或文档。
 
+
 ## 可选 AI 配置
 
 | 变量 | 默认值 | 说明 |
@@ -71,6 +72,24 @@ NoneBot 的 `SUPERUSERS` 也会被权限判断识别。不要把任何真实 ID 
 NapCat 是可选的第三方 OneBot 实现，不属于本仓库。李太白给只保证 OneBot V11 适配层与文档中的连接方式；NapCat 的安装、QQ 登录、更新、WebUI、安全设置和平台兼容性由其上游项目负责。
 
 本仓库不保存 NapCat 配置，也不再分发 NapCat 安装脚本。请使用 [NapCat 官方安装文档](https://napneko.github.io/guide/install)。
+
+## 保留策略与图片库
+
+这些配置均可选；未配置时不会自动删除既有运行记录。设置有限保留期前，应先在 Git 外备份数据并确认实际需要。
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `GROUP_CHAT_LOG_RETENTION_DAYS` | `0` | 群聊记录保留天数，0 表示不自动清理 |
+| `BACKUP_KEEP_DAYS` | `0` | 备份保留天数，0 表示不按天数清理 |
+| `BACKUP_KEEP_COUNT` | `0` | 最多保留备份份数，0 表示不按数量清理 |
+| `BACKUP_INCLUDE_GROUP_CHAT_LOGS` | `true` | 备份是否包含群聊记录 |
+| `BACKUP_INCLUDE_IMAGE_LIBRARY` | `false` | 备份是否包含图片库 |
+| `IMAGE_LIBRARY_OCR_ENABLED` | `false` | 是否允许图片 OCR，需协议端支持 |
+| `IMAGE_LIBRARY_MAX_FILE_MB` | `10` | 单张图片大小上限 |
+| `IMAGE_LIBRARY_MAX_GROUP_MB` | `512` | 每群图片库总容量上限 |
+| `IMAGE_LIBRARY_MAX_GROUP_IMAGES` | `500` | 每群收藏图片数量上限 |
+
+非法保留策略不会触发自动清理。群聊记录和图片库属于群级功能，可通过管理员功能开关停止新增；关闭功能不会删除已有数据。图片库仅在显式收图时收藏，OCR 默认关闭。`/本群数据` 提供当前群采集与保留摘要，系统管理员可通过 `/系统诊断` 检查任务、存储和备份状态。
 
 ## 数据与隐私
 

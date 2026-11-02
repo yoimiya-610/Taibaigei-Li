@@ -29,21 +29,28 @@ def _load_package_plugins(package_name: str, eager_modules: tuple[str, ...] = ()
 
 
 def initialize_bot():
-    """Initialize NoneBot and load business plugins after preflight succeeds."""
+    """Initialize NoneBot and runtime health and recovery hooks after preflight succeeds."""
     global _initialized
     import nonebot
     from nonebot.adapters.onebot.v11 import Adapter as OneBotAdapter
     from mybot.common.onebot_capabilities import register_onebot_capability_hooks
 
+    from mybot.common.data_health import install_startup_health_check
+    from mybot.common.observability import install_observability_hooks
+    from mybot.common.paid_rounds import install_recovery_hooks
+
     if _initialized:
         return nonebot
 
     nonebot.init()
+    install_observability_hooks()
     driver = nonebot.get_driver()
     driver.register_adapter(OneBotAdapter)
     register_onebot_capability_hooks(driver)
     _load_package_plugins("mybot.plugins", eager_modules=("points",))
     _load_package_plugins("mybot.plugins_disabled")
+    install_startup_health_check(driver)
+    install_recovery_hooks(driver)
     _initialized = True
     return nonebot
 

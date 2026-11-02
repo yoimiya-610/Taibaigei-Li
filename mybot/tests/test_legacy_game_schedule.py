@@ -8,23 +8,18 @@ from mybot.common import feature_flags
 
 
 class LegacyGameScheduleTest(unittest.TestCase):
-    def test_weekday_rotation_matches_order(self):
+    def test_all_days_default_to_closed(self):
         monday = date(2026, 6, 29)
         tuesday = date(2026, 6, 30)
         saturday = date(2026, 7, 4)
-
-        self.assertTrue(feature_flags.is_legacy_game_scheduled("legacy_slot", monday))
-        self.assertFalse(feature_flags.is_legacy_game_scheduled("legacy_dice", monday))
-        self.assertTrue(feature_flags.is_legacy_game_scheduled("legacy_dice", tuesday))
-        self.assertTrue(feature_flags.is_legacy_game_scheduled("legacy_scratch", saturday))
-
-    def test_sunday_opens_all_legacy_games(self):
         sunday = date(2026, 7, 5)
 
-        for feature in feature_flags.LEGACY_GAME_ORDER:
-            self.assertTrue(feature_flags.is_legacy_game_scheduled(feature, sunday))
+        for day in (monday, tuesday, saturday, sunday):
+            for feature in feature_flags.LEGACY_GAME_ORDER:
+                self.assertFalse(feature_flags.is_legacy_game_scheduled(feature, day))
+                self.assertFalse(feature_flags.get_legacy_game_enabled(feature, day))
 
-    def test_manual_override_expires_on_next_day(self):
+    def test_explicit_enable_persists_across_days(self):
         monday = date(2026, 6, 29)
         tuesday = date(2026, 6, 30)
 
@@ -35,8 +30,22 @@ class LegacyGameScheduleTest(unittest.TestCase):
                     feature_flags.set_feature_enabled("legacy_race", True)
 
                 self.assertTrue(feature_flags.get_legacy_game_enabled("legacy_race", monday))
-                self.assertIsNone(feature_flags.get_legacy_game_override("legacy_race", tuesday))
-                self.assertFalse(feature_flags.get_legacy_game_enabled("legacy_race", tuesday))
+                self.assertTrue(feature_flags.get_legacy_game_override("legacy_race", tuesday))
+                self.assertTrue(feature_flags.get_legacy_game_enabled("legacy_race", tuesday))
+
+    def test_new_write_preserves_existing_explicit_overrides(self):
+        with TemporaryDirectory() as tmp_dir:
+            overrides_path = Path(tmp_dir) / "legacy_game_overrides.json"
+            with patch.object(feature_flags, "LEGACY_GAME_OVERRIDES_FILE", overrides_path):
+                feature_flags.set_feature_enabled("legacy_slot", True, "100")
+                feature_flags.set_feature_enabled("legacy_dice", True, "200")
+
+                self.assertTrue(
+                    feature_flags.get_legacy_game_enabled("legacy_slot", group_id="100")
+                )
+                self.assertTrue(
+                    feature_flags.get_legacy_game_enabled("legacy_dice", group_id="200")
+                )
 
 
 if __name__ == "__main__":

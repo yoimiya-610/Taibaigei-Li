@@ -15,7 +15,7 @@ from typing import Callable, Iterable, Mapping, Optional, TextIO, Tuple
 from dotenv import load_dotenv
 
 
-MIN_PYTHON_VERSION = (3, 10)
+MIN_PYTHON_VERSION = (3, 11)
 PREFLIGHT_EXIT_CODE = 78
 MAX_RETENTION_DAYS = 36500
 MAX_BACKUP_KEEP_COUNT = 100000
@@ -184,14 +184,14 @@ def check_startup_configuration(
             "python.unsupported",
             Severity.ERROR,
             "PYTHON_VERSION",
-            "升级到 Python 3.10 或更高版本后重新启动。",
+            "升级到 Python 3.11 或更高版本后重新启动。",
         )
     else:
         add(
             "python.supported",
             Severity.INFO,
             "PYTHON_VERSION",
-            "无需修改；当前版本满足 Python 3.10 或更高版本要求。",
+            "无需修改；当前版本满足 Python 3.11 或更高版本要求。",
         )
 
     if env_file.is_file():
