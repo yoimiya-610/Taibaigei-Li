@@ -15,6 +15,10 @@ _locks: dict[Path, threading.RLock] = {}
 _locks_guard = threading.Lock()
 
 
+class JsonStoreReadError(RuntimeError):
+    """Raised when an existing JSON store cannot be read safely for mutation."""
+
+
 def _resolve(path: Path | str) -> Path:
     return Path(path).resolve()
 
@@ -31,7 +35,7 @@ def _default_copy(default: T) -> T:
     return copy.deepcopy(default)
 
 
-def _read_json_unlocked(path: Path, default: T) -> T:
+def _read_json_unlocked(path: Path, default: T, *, strict: bool = False) -> T:
     try:
         with path.open("r", encoding="utf-8") as file:
             return json.load(file)
@@ -39,9 +43,13 @@ def _read_json_unlocked(path: Path, default: T) -> T:
         return _default_copy(default)
     except json.JSONDecodeError as exc:
         logger.exception(f"JSON 解析失败 file={path}: {exc}")
+        if strict:
+            raise JsonStoreReadError(f"invalid_json: {path}") from exc
         return _default_copy(default)
     except Exception as exc:
         logger.exception(f"JSON 读取失败 file={path}: {exc}")
+        if strict:
+            raise JsonStoreReadError(f"unreadable_json: {path}") from exc
         return _default_copy(default)
 
 
@@ -69,7 +77,7 @@ def save_json(path: Path | str, data) -> None:
 def mutate_json(path: Path | str, default: T, mutator: Callable[[T], R]) -> R:
     resolved = _resolve(path)
     with _get_lock(resolved):
-        data = _read_json_unlocked(resolved, default)
+        data = _read_json_unlocked(resolved, default, strict=True)
         result = mutator(data)
         _write_json_unlocked(resolved, data)
         return result

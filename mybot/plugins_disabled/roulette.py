@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="legacy_roulette",
+    name="转盘挑战",
+    default_enabled=False,
+    scope="group",
+    permission_level=4,
+    data_files=("data/paid_rounds.json", "data/points.json"),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 import time
 from nonebot import on_command
@@ -7,13 +21,21 @@ from nonebot.adapters.onebot.v11 import Message
 from nonebot.rule import Rule
 from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.help_registry import HelpItem
-from mybot.plugins.points import get_points, spend_points, add_points
+from mybot.common.accounting import ASSET_POINTS, get_points
+from mybot.common.paid_rounds import (
+    PaidRoundService,
+    new_round_id,
+    next_local_midnight_timestamp,
+    register_recovery_adapter,
+)
 from mybot.plugins.rate_limit import check_game_limit, get_limit_message
 from mybot.common.logger import get_plugin_logger
 
 
 logger = get_plugin_logger(__name__)
 FEATURE_KEY = "legacy_roulette"
+SOLO_GAME_TYPE = "roulette_solo"
+PVP_GAME_TYPE = "roulette_pvp"
 MAX_BET = 100
 SOLO_SAFE_BONUS_RATE = 0.15
 PVP_POOL_PAYOUT_RATE = 0.95
@@ -45,6 +67,57 @@ COOLDOWN_TIME = 5
 
 # 转盘挑战多人模式 {group_id: {"players": [], "bet": int, "current": int, "bullet": int}}
 pvp_games = {}
+
+
+def _round_service() -> PaidRoundService:
+    return PaidRoundService()
+
+
+def _hydrate_pvp_round(round_record: dict) -> dict:
+    game = round_record["payload"]
+    game["round_id"] = round_record["round_id"]
+    known_users = {player["user_id"] for player in game.setdefault("players", [])}
+    for participant in round_record.get("participants", {}).values():
+        if participant.get("state") not in {"active", "settled"}:
+            continue
+        metadata = participant.get("metadata", {})
+        if metadata.get("role") != "player" or participant["user_id"] in known_users:
+            continue
+        game["players"].append(
+            {
+                "user_id": participant["user_id"],
+                "nickname": metadata["nickname"],
+                "alive": bool(metadata.get("alive", True)),
+            }
+        )
+    return game
+
+
+def _restore_pvp_round(round_record: dict, service: PaidRoundService) -> None:
+    pvp_games[round_record["group_id"]] = _hydrate_pvp_round(round_record)
+
+
+def _pvp_round_is_loaded(round_record: dict) -> bool:
+    return pvp_games.get(round_record["group_id"], {}).get("round_id") == round_record["round_id"]
+
+
+def _discard_pvp_round(round_record: dict, service: PaidRoundService) -> None:
+    if _pvp_round_is_loaded(round_record):
+        pvp_games.pop(round_record["group_id"], None)
+
+
+def _expire_pvp_round(round_record: dict, service: PaidRoundService) -> None:
+    _discard_pvp_round(round_record, service)
+    service.refund_round(round_record["round_id"], reason="room_deadline_expired")
+
+
+register_recovery_adapter(
+    PVP_GAME_TYPE,
+    restore=_restore_pvp_round,
+    is_loaded=_pvp_round_is_loaded,
+    discard=_discard_pvp_round,
+    on_due=_expire_pvp_round,
+)
 
 # 单人揭结果文案
 SOLO_PULL_MESSAGES = [
@@ -182,17 +255,42 @@ async def handle_solo_roulette(bot: Bot, event: MessageEvent, args: Message = Co
     if points_info["current"] < bet:
         await solo_roulette.finish(f"（摇头）积分不够...你只有 {points_info['current']} 积分")
     
-    # 扣除积分
-    spend_points(user_id, group_id, bet)
-    cooldown[cd_key] = now
-    
     pull_msg = random.choice(SOLO_PULL_MESSAGES)
     
     # 转转盘 1/6 概率触发提示牌
     bullet = random.randint(1, 6)
     shot = random.randint(1, 6)
+    survived = bullet != shot
+    win = int(bet * SOLO_SAFE_BONUS_RATE) if survived else 0
+    total_return = bet + win if survived else 0
+    service = _round_service()
+    round_id = new_round_id(SOLO_GAME_TYPE)
+    service.create_round(
+        round_id=round_id,
+        game_type=SOLO_GAME_TYPE,
+        mode="instant",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_POINTS,
+        feature_key=FEATURE_KEY,
+        payload={"bullet": bullet, "shot": shot, "nickname": nickname, "bet": bet},
+        result={"bullet": bullet, "shot": shot, "survived": survived},
+        participants=[
+            {
+                "user_id": user_id,
+                "amount": bet,
+                "payout_amount": total_return,
+            }
+        ],
+    )
+    charge = service.freeze_participant(round_id, user_id)
+    if not charge["ok"]:
+        service.refund_round(round_id, reason="insufficient_balance")
+        await solo_roulette.finish(f"（摇头）积分不够...你只有 {charge['balance']} 积分")
+    service.settle_round(round_id)
+    cooldown[cd_key] = now
     
-    if bullet == shot:
+    if not survived:
         # 触发提示牌
         new_points = get_points(user_id, group_id)
         comment = random.choice(SOLO_DEATH_MESSAGES)
@@ -215,9 +313,6 @@ async def handle_solo_roulette(bot: Bot, event: MessageEvent, args: Message = Co
         )
     else:
         # 存活，获得0.15倍奖励
-        win = int(bet * SOLO_SAFE_BONUS_RATE)
-        total_return = bet + win
-        add_points(user_id, group_id, total_return)
         new_points = get_points(user_id, group_id)
         
         comment = random.choice(SOLO_SURVIVE_MESSAGES)
@@ -313,13 +408,10 @@ async def handle_start_pvp(bot: Bot, event: MessageEvent, args: Message = Comman
     if points_info["current"] < bet:
         await start_pvp.finish(f"（摇头）积分不够！你只有 {points_info['current']} 积分")
     
-    # 扣除积分
-    spend_points(user_id, group_id, bet)
-    
     start_msg = random.choice(PVP_START_MESSAGES)
     
     # 创建游戏
-    pvp_games[group_id] = {
+    game = {
         "players": [{"user_id": user_id, "nickname": nickname, "alive": True}],
         "bet": bet,
         "current": 0,
@@ -327,6 +419,32 @@ async def handle_start_pvp(bot: Bot, event: MessageEvent, args: Message = Comman
         "chamber": 0,
         "started": False
     }
+    service = _round_service()
+    round_id = new_round_id(PVP_GAME_TYPE)
+    game["round_id"] = round_id
+    service.create_round(
+        round_id=round_id,
+        game_type=PVP_GAME_TYPE,
+        mode="multiplayer",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_POINTS,
+        feature_key=FEATURE_KEY,
+        payload=game,
+        participants=[
+            {
+                "user_id": user_id,
+                "amount": bet,
+                "metadata": {"role": "player", "nickname": nickname, "alive": True},
+            }
+        ],
+        deadline_at=next_local_midnight_timestamp(),
+    )
+    charge = service.freeze_participant(round_id, user_id)
+    if not charge["ok"]:
+        service.refund_round(round_id, reason="insufficient_balance")
+        await start_pvp.finish(f"（摇头）积分不够！你只有 {charge['balance']} 积分")
+    pvp_games[group_id] = game
     
     await start_pvp.finish(
         f"🎲 李太白给·转盘挑战 🎲\n"
@@ -389,11 +507,23 @@ async def handle_join_pvp(bot: Bot, event: MessageEvent):
     if points_info["current"] < bet:
         await join_pvp.finish(f"（摇头）积分不够！需要 {bet} 积分，你只有 {points_info['current']} 积分")
     
-    # 扣除积分
-    spend_points(user_id, group_id, bet)
-    
-    # 加入游戏
+    service = _round_service()
+    service.add_participant(
+        game["round_id"],
+        participant_id=user_id,
+        user_id=user_id,
+        amount=bet,
+        metadata={"role": "player", "nickname": nickname, "alive": True},
+    )
+    charge = service.freeze_participant(game["round_id"], user_id)
+    if not charge["ok"]:
+        await join_pvp.finish(
+            f"（摇头）积分不够！需要 {bet} 积分，你只有 {charge['balance']} 积分"
+        )
+
+    # 加入游戏并在确认消息前持久化。
     game["players"].append({"user_id": user_id, "nickname": nickname, "alive": True})
+    service.update_payload(game["round_id"], game)
     
     players_text = "、".join([p["nickname"] for p in game["players"]])
     join_msg = random.choice(PVP_JOIN_MESSAGES)
@@ -438,6 +568,7 @@ async def handle_begin_pvp(bot: Bot, event: MessageEvent):
     
     # 随机打乱顺序
     random.shuffle(game["players"])
+    _round_service().update_payload(game["round_id"], game)
     
     first_player = game["players"][0]
     players_order = " → ".join([p["nickname"] for p in game["players"]])
@@ -504,13 +635,22 @@ async def handle_pull_trigger(bot: Bot, event: MessageEvent):
             winner = alive_players[0]
             total_pool = game["bet"] * len(game["players"])
             payout_pool = int(total_pool * PVP_POOL_PAYOUT_RATE)
-
-            add_points(winner["user_id"], group_id, payout_pool)
+            service = _round_service()
+            service.prepare_settlement(
+                game["round_id"],
+                result={
+                    "reason": "last_survivor",
+                    "winner_id": winner["user_id"],
+                    "players": game["players"],
+                },
+                payouts={winner["user_id"]: payout_pool},
+            )
+            service.settle_round(game["round_id"])
             
             win_msg = random.choice(PVP_WIN_MESSAGES)
             poem = f"转盘挑战定结果，\n{winner['nickname']}笑到最后真英雄。\n拿下本轮积分心欢喜，\n改日再来战群雄~"
             
-            del pvp_games[group_id]
+            pvp_games.pop(group_id, None)
             
             await pull_trigger.finish(
                 f"🎲 转盘挑战结束！🎲\n"
@@ -529,6 +669,7 @@ async def handle_pull_trigger(bot: Bot, event: MessageEvent):
             game["bullet"] = random.randint(1, 6)
             game["chamber"] = 0
             game["current"] = 0
+            _round_service().update_payload(game["round_id"], game)
             
             next_player = alive_players[0]
             alive_names = "、".join([p["nickname"] for p in alive_players])
@@ -549,6 +690,7 @@ async def handle_pull_trigger(bot: Bot, event: MessageEvent):
     else:
         # 空格
         game["current"] += 1
+        _round_service().update_payload(game["round_id"], game)
         alive_players = [p for p in game["players"] if p["alive"]]
         next_player = alive_players[game["current"] % len(alive_players)]
         
@@ -583,11 +725,8 @@ async def handle_cancel_pvp(bot: Bot, event: MessageEvent):
     if game["started"]:
         await cancel_pvp.finish("（摇头）游戏已经开始了，没法取消！")
     
-    # 退还积分
-    for player in game["players"]:
-        add_points(player["user_id"], group_id, game["bet"])
-    
-    del pvp_games[group_id]
+    _round_service().refund_round(game["round_id"], reason="user_cancelled")
+    pvp_games.pop(group_id, None)
     
     await cancel_pvp.finish(
         f"🎲 转盘挑战已取消，积分已退还~\n"

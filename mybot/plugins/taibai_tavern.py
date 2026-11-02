@@ -1,506 +1,296 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="taibai_tavern",
+    name="太白酒馆",
+    default_enabled=True,
+    scope="group",
+    permission_level=3,
+    data_files=(
+        "data/paid_rounds.json",
+        "data/points.json",
+        "data/taibai_tavern.json",
+    ),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
+import asyncio
 import random
 import time
-from math import ceil, comb
 from pathlib import Path
 
-from nonebot import on_command
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent
+from nonebot import get_bots, on_command
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
 from nonebot.params import CommandArg
 
-from mybot.common.help_registry import HelpItem
-from mybot.common.json_store import load_json, mutate_json
+from mybot.common.accounting import ASSET_WINE_MONEY
 from mybot.common.logger import get_plugin_logger
+from mybot.common.paid_rounds import (
+    PaidRoundService,
+    new_round_id,
+    register_recovery_adapter,
+)
 from mybot.common.user_utils import get_nickname
-from mybot.plugins.points import get_points, refund_points, spend_points
+
+from mybot.plugins._taibai_tavern import storage as _tavern_storage
+from mybot.plugins._taibai_tavern.business import (
+    active_rps_duels,
+    pending_rps_challenges,
+    rps_duel_locks,
+    _collect_qq_rps_results,
+    _expire_pending_rps_challenge,
+    _notify_qq_rps_pending,
+    _settle_rps_duel,
+    create_rps_duel_round,
+)
+from mybot.plugins._taibai_tavern.copy import (
+    COMMAND_ALIASES,
+    HELP_ITEMS,
+    PUBLIC_PLAY_GUIDES,
+    _format_board,
+    _format_ink_trace_options,
+    _render_tavern_help,
+    _status_line,
+)
+from mybot.plugins._taibai_tavern.rules import (
+    BAD_SIGN_ONE_WEIGHT,
+    BAD_SIGN_PRIOR_WEIGHTS,
+    BAD_SIGN_TWO_WEIGHT,
+    BAD_SIGN_ZERO_WEIGHT,
+    COOLDOWN_TIME,
+    FEATURE_KEY,
+    FIXED_BAD_SIGN_COUNTS,
+    FLIP_GAME_TYPE,
+    INK_GAME_TYPE,
+    INK_TRACE_IMAGES,
+    INK_TRACE_OPTION_COUNTS,
+    INK_TRACE_REWARD_TENTHS_BY_IMAGE,
+    INK_TRACE_STARGAZE_TENTHS,
+    INK_TRACE_TREASURE_NAMES,
+    INK_TRACE_TREASURE_WEIGHTS,
+    MODE_MULTIPLIER_TENTHS,
+    POINT_TO_WINE,
+    QQRpsResultError,
+    RANDOM_MODE,
+    REFUND_TENTHS,
+    RPS_CHALLENGE_TIMEOUT_SECONDS,
+    RPS_FETCH_ATTEMPTS,
+    RPS_FETCH_DELAY_SECONDS,
+    RPS_GAME_TYPE,
+    RPS_RESULT_DEADLINE_SECONDS,
+    RPS_RESULT_NAMES,
+    SIGN_COUNT,
+    _challenge_expired,
+    _extract_message_id,
+    _extract_rps_result,
+    _normalize_rps_result,
+    _posterior_weight_for_bad_count,
+    _read_qq_rps_result,
+    _rps_result_name,
+    calculate_continue_expectation_wine,
+    calculate_ink_trace_reward_wine,
+    calculate_ink_trace_stargaze_cost,
+    calculate_optimal_return_ratio,
+    calculate_refund_wine,
+    calculate_reward_wine,
+    choose_bad_sign_count,
+    choose_ink_trace_treasure,
+    compare_rps,
+    current_multiplier_text,
+    get_ink_trace_reward_tenths,
+    get_ink_trace_treasure_name,
+    get_mode_bad_weights,
+    get_mode_label,
+    get_mode_multipliers,
+    max_good_count_for_mode,
+    mode_multiplier_text,
+    new_ink_trace_game,
+    new_sign_deck,
+    parse_exchange_points,
+    parse_ink_trace_guess,
+    parse_rps_challenge_args,
+    parse_sign_position,
+    parse_start_args,
+    parse_wine_money,
+    points_needed_for_wine,
+    points_to_wine,
+    reveal_wrong_ink_trace_option,
+)
 
 
 logger = get_plugin_logger(__name__)
 
-POINT_TO_WINE = 10
-SIGN_COUNT = 5
-INK_TRACE_IMAGES = ("酒", "月", "剑", "花", "云", "舟")
-INK_TRACE_OPTION_COUNTS = (3, 4)
-INK_TRACE_REWARD_TENTHS_BY_IMAGE = {
-    "酒": 18,
-    "月": 20,
-    "剑": 22,
-    "舟": 24,
-    "云": 26,
-    "花": 30,
-}
-INK_TRACE_TREASURE_WEIGHTS = {
-    "酒": 18,
-    "月": 16,
-    "剑": 14,
-    "舟": 12,
-    "云": 10,
-    "花": 7,
-}
-INK_TRACE_TREASURE_NAMES = {
-    "酒": "醉仙残盏",
-    "月": "水月银笺",
-    "剑": "青锋诗骨",
-    "花": "绯落小印",
-    "云": "云帆墨契",
-    "舟": "夜泊孤篆",
-}
-INK_TRACE_STARGAZE_TENTHS = 6
-BAD_SIGN_ZERO_WEIGHT = 10
-BAD_SIGN_ONE_WEIGHT = 35
-BAD_SIGN_TWO_WEIGHT = 55
-REFUND_TENTHS = 2
-COOLDOWN_TIME = 3
-RANDOM_MODE = "random"
-FIXED_BAD_SIGN_COUNTS = (1, 2, 3, 4)
-MODE_MULTIPLIER_TENTHS = {
-    RANDOM_MODE: (11, 15, 23, 38, 75),
-    1: (10, 12.5, 17, 25),
-    2: (13, 20, 60),
-    3: (20, 80),
-    4: (40,),
-}
 DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "taibai_tavern.json"
-DEFAULT_TAVERN_DATA = {"accounts": {}}
-BAD_SIGN_PRIOR_WEIGHTS = {
-    0: BAD_SIGN_ZERO_WEIGHT,
-    1: BAD_SIGN_ONE_WEIGHT,
-    2: BAD_SIGN_TWO_WEIGHT,
-}
-
-HELP_ITEMS = (
-    HelpItem("太白酒馆", "/太白酒馆 - 酒馆总览与酒钱规则", 10),
-    HelpItem("太白酒馆", "/酒钱 - 查看酒馆酒钱", 20),
-    HelpItem("太白酒馆", "/兑换酒钱 积分数 - 添酒钱", 30),
-    HelpItem("太白酒馆", "/灵签翻盘 酒钱数 - 酒馆灵签局", 40),
-    HelpItem("太白酒馆", "/墨宝寻踪 酒钱数 - 寻诗猜墨宝", 50),
-)
-COMMAND_ALIASES = (
-    "太白酒馆",
-    "酒钱",
-    "我的酒钱",
-    "酒钱余额",
-    "兑换酒钱",
-    "灵签翻盘",
-    "翻签",
-    "收签",
-    "弃签",
-    "墨宝寻踪",
-    "寻踪",
-    "观星",
-)
 
 active_games: dict[str, dict] = {}
 active_ink_traces: dict[str, dict] = {}
 cooldown: dict[str, float] = {}
 
 
+def _round_service() -> PaidRoundService:
+    return PaidRoundService(ledger_paths={ASSET_WINE_MONEY: DATA_FILE})
+
+
+def _personal_round_key(round_record: dict) -> str:
+    return f"{round_record['group_id']}_{round_record['creator_id']}"
+
+
+def _restore_flip_round(round_record: dict, service: PaidRoundService) -> None:
+    game = round_record["payload"]
+    game["round_id"] = round_record["round_id"]
+    active_games[_personal_round_key(round_record)] = game
+
+
+def _flip_round_is_loaded(round_record: dict) -> bool:
+    return active_games.get(_personal_round_key(round_record), {}).get("round_id") == round_record["round_id"]
+
+
+def _discard_flip_round(round_record: dict, service: PaidRoundService) -> None:
+    if _flip_round_is_loaded(round_record):
+        active_games.pop(_personal_round_key(round_record), None)
+
+
+def _restore_ink_round(round_record: dict, service: PaidRoundService) -> None:
+    game = round_record["payload"]
+    game["round_id"] = round_record["round_id"]
+    for participant_id, participant in round_record.get("participants", {}).items():
+        metadata = participant.get("metadata", {})
+        if metadata.get("role") != "auxiliary" or metadata.get("kind") != "stargaze":
+            continue
+        if participant.get("state") not in {"active", "settled"}:
+            continue
+        revealed = metadata.get("revealed")
+        if revealed and not game.get("stargazed"):
+            game.setdefault("excluded", []).append(revealed)
+            game["stargazed"] = True
+            service.update_payload(round_record["round_id"], game)
+        if participant.get("state") == "active":
+            service.settle_participant(round_record["round_id"], participant_id)
+    active_ink_traces[_personal_round_key(round_record)] = game
+
+
+def _ink_round_is_loaded(round_record: dict) -> bool:
+    return active_ink_traces.get(_personal_round_key(round_record), {}).get("round_id") == round_record["round_id"]
+
+
+def _discard_ink_round(round_record: dict, service: PaidRoundService) -> None:
+    if _ink_round_is_loaded(round_record):
+        active_ink_traces.pop(_personal_round_key(round_record), None)
+
+
+def _restore_rps_round(round_record: dict, service: PaidRoundService) -> None:
+    game = round_record["payload"]
+    game["round_id"] = round_record["round_id"]
+    active_rps_duels[round_record["group_id"]] = game
+
+
+def _rps_round_is_loaded(round_record: dict) -> bool:
+    return active_rps_duels.get(round_record["group_id"], {}).get("round_id") == round_record["round_id"]
+
+
+def _discard_rps_round(round_record: dict, service: PaidRoundService) -> None:
+    if _rps_round_is_loaded(round_record):
+        active_rps_duels.pop(round_record["group_id"], None)
+
+
+def _connected_bot() -> Bot | None:
+    return next(iter(get_bots().values()), None)
+
+
+async def _settle_due_rps_round(round_record: dict, service: PaidRoundService) -> None:
+    group_id = round_record["group_id"]
+    if not _rps_round_is_loaded(round_record):
+        _restore_rps_round(round_record, service)
+
+    bot = _connected_bot()
+    if bot is not None and await _settle_rps_duel(bot, group_id, service=service):
+        return
+
+    lock = rps_duel_locks.setdefault(group_id, asyncio.Lock())
+    async with lock:
+        current = service.get_round(round_record["round_id"])
+        if current.get("state") in {"settled", "refunded", "expired"}:
+            active_rps_duels.pop(group_id, None)
+            return
+        if current.get("result") is not None:
+            if bot is None:
+                service.settle_round(round_record["round_id"])
+                active_rps_duels.pop(group_id, None)
+            return
+        service.refund_round(round_record["round_id"], reason="qq_rps_result_timeout")
+        active_rps_duels.pop(group_id, None)
+    if bot is None:
+        return
+    try:
+        await bot.send_group_msg(
+            group_id=int(group_id),
+            message=(
+                "🍶 太白酒馆·对饮猜拳 🍶\n"
+                "（本猫收起两枚看不真切的拳影）此局未能在时限内验明，双方酒钱已原路归壶。\n"
+                "『拳影未明休记账，杯中旧钱各自还。』"
+            ),
+        )
+    except Exception as exc:
+        logger.exception(f"发送对饮猜拳超时退款提示失败 group_id={group_id}: {exc}")
+
+
+register_recovery_adapter(
+    FLIP_GAME_TYPE,
+    restore=_restore_flip_round,
+    is_loaded=_flip_round_is_loaded,
+    discard=_discard_flip_round,
+)
+register_recovery_adapter(
+    INK_GAME_TYPE,
+    restore=_restore_ink_round,
+    is_loaded=_ink_round_is_loaded,
+    discard=_discard_ink_round,
+)
+register_recovery_adapter(
+    RPS_GAME_TYPE,
+    restore=_restore_rps_round,
+    is_loaded=_rps_round_is_loaded,
+    discard=_discard_rps_round,
+    on_due=_settle_due_rps_round,
+)
+
+
 def _game_key(event: GroupMessageEvent) -> str:
     return f"{event.group_id}_{event.get_user_id()}"
 
 
-def parse_wine_money(text: str) -> int | None:
-    normalized = text.strip().replace("酒钱", "").replace("枚", "").replace("文", "").strip()
-    if not normalized.isdigit():
-        return None
-    amount = int(normalized)
-    if amount <= 0:
-        return None
-    return amount
-
-
-def parse_start_args(text: str) -> dict | None:
-    parts = text.replace("，", " ").replace(",", " ").split()
-    if not parts:
-        return None
-    if len(parts) > 2:
-        return None
-
-    wine_money = parse_wine_money(parts[0])
-    if wine_money is None:
-        return None
-
-    mode: str | int = RANDOM_MODE
-    if len(parts) >= 2:
-        mode_text = parts[1].strip().replace("凶签", "").replace("凶", "")
-        aliases = {"一": 1, "二": 2, "三": 3, "四": 4}
-        if mode_text in {"随机", "随", "random"}:
-            mode = RANDOM_MODE
-        elif mode_text in aliases:
-            mode = aliases[mode_text]
-        elif mode_text.isdigit() and int(mode_text) in FIXED_BAD_SIGN_COUNTS:
-            mode = int(mode_text)
-        else:
-            return None
-
-    return {"wine_money": wine_money, "mode": mode}
-
-
-def parse_sign_position(text: str) -> int | None:
-    normalized = text.strip().replace("号", "").replace("签", "")
-    aliases = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5}
-    if normalized in aliases:
-        return aliases[normalized]
-    if not normalized.isdigit():
-        return None
-    position = int(normalized)
-    if position < 1 or position > SIGN_COUNT:
-        return None
-    return position
-
-
-def parse_ink_trace_guess(text: str) -> str | None:
-    normalized = text.strip().replace("墨宝", "").replace("意象", "").strip()
-    if normalized in INK_TRACE_IMAGES:
-        return normalized
-    return None
-
-
-def points_to_wine(points_amount: int) -> int:
-    return points_amount * POINT_TO_WINE
-
-
-def points_needed_for_wine(wine_money: int) -> int:
-    return ceil(wine_money / POINT_TO_WINE)
-
-
-def parse_exchange_points(text: str) -> int | None:
-    normalized = text.strip().replace("积分", "").replace("分", "").strip()
-    if not normalized.isdigit():
-        return None
-    amount = int(normalized)
-    if amount <= 0:
-        return None
-    return amount
-
-
-def _account_key(user_id: str, group_id: str) -> str:
-    return f"{group_id}_{user_id}"
-
-
-def _new_account_record(user_id: str, group_id: str) -> dict:
-    return {"wine_money": 0, "user_id": user_id, "group_id": group_id}
-
-
 def get_wine_money(user_id: str, group_id: str) -> int:
-    key = _account_key(user_id, group_id)
-    data = load_json(DATA_FILE, DEFAULT_TAVERN_DATA)
-    record = data.get("accounts", {}).get(key, {})
-    try:
-        return max(int(record.get("wine_money", 0)), 0)
-    except (TypeError, ValueError):
-        return 0
+    return _tavern_storage.get_wine_money(user_id, group_id, data_file=DATA_FILE)
 
 
 def add_wine_money(user_id: str, group_id: str, amount: int) -> dict:
-    key = _account_key(user_id, group_id)
-
-    def mutator(data: dict) -> dict:
-        accounts = data.setdefault("accounts", {})
-        record = accounts.setdefault(key, _new_account_record(user_id, group_id))
-        record["wine_money"] = max(int(record.get("wine_money", 0)), 0) + amount
-        return dict(record)
-
-    return mutate_json(DATA_FILE, DEFAULT_TAVERN_DATA, mutator)
+    return _tavern_storage.add_wine_money(user_id, group_id, amount, data_file=DATA_FILE)
 
 
 def spend_wine_money(user_id: str, group_id: str, amount: int) -> dict:
-    key = _account_key(user_id, group_id)
-
-    def mutator(data: dict) -> dict:
-        accounts = data.setdefault("accounts", {})
-        record = accounts.setdefault(key, _new_account_record(user_id, group_id))
-        current = max(int(record.get("wine_money", 0)), 0)
-        if current < amount:
-            return {"ok": False, "balance": current, "record": dict(record)}
-        record["wine_money"] = current - amount
-        return {"ok": True, "balance": record["wine_money"], "record": dict(record)}
-
-    return mutate_json(DATA_FILE, DEFAULT_TAVERN_DATA, mutator)
+    return _tavern_storage.spend_wine_money(user_id, group_id, amount, data_file=DATA_FILE)
 
 
 def exchange_points_to_wine(user_id: str, group_id: str, points_amount: int) -> dict:
-    if points_amount <= 0:
-        return {"status": "invalid_amount"}
-
-    points_info = get_points(user_id, group_id)
-    if points_info["current"] < points_amount:
-        return {
-            "status": "insufficient_points",
-            "points_balance": points_info["current"],
-            "point_cost": points_amount,
-            "exchanged_wine": points_to_wine(points_amount),
-        }
-    if not spend_points(user_id, group_id, points_amount):
-        return {"status": "point_spend_failed", "point_cost": points_amount}
-
-    wine_amount = points_to_wine(points_amount)
-    try:
-        record = add_wine_money(user_id, group_id, wine_amount)
-    except Exception as exc:
-        refund_points(user_id, group_id, points_amount)
-        logger.exception(f"太白酒馆兑换酒钱失败 group_id={group_id} user_id={user_id}: {exc}")
-        return {"status": "store_error", "point_cost": points_amount}
-
-    return {
-        "status": "ok",
-        "point_cost": points_amount,
-        "exchanged_wine": wine_amount,
-        "wine_balance": record["wine_money"],
-    }
-
-
-def prepare_wine_stake(user_id: str, group_id: str, stake_wine: int) -> dict:
-    spend_result = spend_wine_money(user_id, group_id, stake_wine)
-    if spend_result["ok"]:
-        return {"status": "ok", "wine_balance": spend_result["balance"], "record": spend_result["record"]}
-
-    shortfall = stake_wine - spend_result["balance"]
-    return {
-        "status": "insufficient_wine",
-        "wine_balance": spend_result["balance"],
-        "shortfall": shortfall,
-        "point_cost": points_needed_for_wine(shortfall),
-    }
-
-
-def choose_bad_sign_count() -> int:
-    return random.choices(
-        (0, 1, 2),
-        weights=(BAD_SIGN_ZERO_WEIGHT, BAD_SIGN_ONE_WEIGHT, BAD_SIGN_TWO_WEIGHT),
-        k=1,
-    )[0]
-
-
-def new_sign_deck(bad_count: int | None = None) -> list[str]:
-    bad_total = bad_count if bad_count in range(0, SIGN_COUNT) else choose_bad_sign_count()
-    deck = ["凶"] * bad_total + ["吉"] * (SIGN_COUNT - bad_total)
-    random.shuffle(deck)
-    return deck
-
-
-def get_mode_multipliers(mode: str | int = RANDOM_MODE) -> tuple[float, ...]:
-    return MODE_MULTIPLIER_TENTHS.get(mode, MODE_MULTIPLIER_TENTHS[RANDOM_MODE])
-
-
-def get_mode_bad_weights(mode: str | int = RANDOM_MODE) -> dict[int, int]:
-    if isinstance(mode, int) and mode in FIXED_BAD_SIGN_COUNTS:
-        return {mode: 1}
-    return BAD_SIGN_PRIOR_WEIGHTS
-
-
-def get_mode_label(mode: str | int = RANDOM_MODE) -> str:
-    if mode == RANDOM_MODE:
-        return "随机凶签"
-    return f"{mode} 凶签"
-
-
-def max_good_count_for_mode(mode: str | int = RANDOM_MODE, bad_count: int | None = None) -> int:
-    if isinstance(bad_count, int):
-        return SIGN_COUNT - bad_count
-    if isinstance(mode, int) and mode in FIXED_BAD_SIGN_COUNTS:
-        return SIGN_COUNT - mode
-    return SIGN_COUNT
-
-
-def calculate_reward_wine(stake_wine: int, good_count: int, mode: str | int = RANDOM_MODE) -> int:
-    if good_count <= 0:
-        return 0
-    multipliers = get_mode_multipliers(mode)
-    capped_count = min(good_count, len(multipliers))
-    return int(round(stake_wine * (multipliers[capped_count - 1] / 10), 8))
-
-
-def calculate_refund_wine(stake_wine: int) -> int:
-    return stake_wine * REFUND_TENTHS // 10
-
-
-def get_ink_trace_reward_tenths(image: str) -> int:
-    return INK_TRACE_REWARD_TENTHS_BY_IMAGE.get(image, INK_TRACE_REWARD_TENTHS_BY_IMAGE["月"])
-
-
-def get_ink_trace_treasure_name(image: str) -> str:
-    return INK_TRACE_TREASURE_NAMES.get(image, "无名墨宝")
-
-
-def calculate_ink_trace_reward_wine(stake_wine: int, image: str) -> int:
-    return stake_wine * get_ink_trace_reward_tenths(image) // 10
-
-
-def calculate_ink_trace_stargaze_cost(stake_wine: int) -> int:
-    return max(1, stake_wine * INK_TRACE_STARGAZE_TENTHS // 10)
-
-
-def choose_ink_trace_treasure(options: list[str]) -> str:
-    return random.choices(
-        options,
-        weights=[INK_TRACE_TREASURE_WEIGHTS[option] for option in options],
-        k=1,
-    )[0]
-
-
-def new_ink_trace_game(stake_wine: int, user_id: str, group_id: str, nickname: str) -> dict:
-    option_count = random.choice(INK_TRACE_OPTION_COUNTS)
-    options = random.sample(INK_TRACE_IMAGES, option_count)
-    treasure = choose_ink_trace_treasure(options)
-    return {
-        "options": options,
-        "treasure": treasure,
-        "excluded": [],
-        "stargazed": False,
-        "stake_wine": stake_wine,
-        "user_id": user_id,
-        "group_id": group_id,
-        "nickname": nickname,
-        "started_at": time.time(),
-    }
-
-
-def reveal_wrong_ink_trace_option(game: dict) -> str | None:
-    excluded = set(game.get("excluded", []))
-    candidates = [option for option in game["options"] if option != game["treasure"] and option not in excluded]
-    if not candidates:
-        return None
-    revealed = random.choice(candidates)
-    game.setdefault("excluded", []).append(revealed)
-    game["stargazed"] = True
-    return revealed
-
-
-def _posterior_weight_for_bad_count(
-    bad_count: int,
-    revealed_good_count: int,
-    mode: str | int = RANDOM_MODE,
-) -> float:
-    total_good = SIGN_COUNT - bad_count
-    if revealed_good_count > total_good:
-        return 0.0
-    weight = get_mode_bad_weights(mode).get(bad_count, 0)
-    return weight * comb(total_good, revealed_good_count) / comb(SIGN_COUNT, revealed_good_count)
-
-
-def calculate_continue_expectation_wine(
-    stake_wine: int,
-    revealed_good_count: int,
-    mode: str | int = RANDOM_MODE,
-) -> float:
-    hidden_count = SIGN_COUNT - revealed_good_count
-    if hidden_count <= 0:
-        return 0.0
-
-    weighted_good_probability = 0.0
-    total_weight = 0.0
-    for bad_count in get_mode_bad_weights(mode):
-        weight = _posterior_weight_for_bad_count(bad_count, revealed_good_count, mode)
-        if weight <= 0:
-            continue
-        remaining_good = SIGN_COUNT - bad_count - revealed_good_count
-        weighted_good_probability += weight * max(remaining_good, 0) / hidden_count
-        total_weight += weight
-
-    if total_weight <= 0:
-        return 0.0
-    good_probability = weighted_good_probability / total_weight
-    return good_probability * calculate_reward_wine(stake_wine, revealed_good_count + 1, mode)
-
-
-def calculate_optimal_return_ratio(mode: str | int = RANDOM_MODE) -> float:
-    cache: dict[int, float] = {}
-    multipliers = get_mode_multipliers(mode)
-    max_good_count = max(SIGN_COUNT - bad_count for bad_count in get_mode_bad_weights(mode))
-
-    def best_return(good_count: int) -> float:
-        if good_count in cache:
-            return cache[good_count]
-
-        cash_out = 0.0 if good_count <= 0 else multipliers[min(good_count, len(multipliers)) - 1] / 10
-        if good_count >= max_good_count:
-            cache[good_count] = cash_out
-            return cash_out
-
-        hidden_count = SIGN_COUNT - good_count
-        continue_return = 0.0
-        total_weight = 0.0
-        for bad_count in get_mode_bad_weights(mode):
-            weight = _posterior_weight_for_bad_count(bad_count, good_count, mode)
-            if weight <= 0:
-                continue
-            remaining_good = SIGN_COUNT - bad_count - good_count
-            continue_return += weight * max(remaining_good, 0) / hidden_count * best_return(good_count + 1)
-            total_weight += weight
-
-        if total_weight > 0:
-            continue_return /= total_weight
-        cache[good_count] = max(cash_out, continue_return)
-        return cache[good_count]
-
-    return best_return(0)
-
-
-def current_multiplier_text(good_count: int, mode: str | int = RANDOM_MODE) -> str:
-    if good_count <= 0:
-        return "0x"
-    multipliers = get_mode_multipliers(mode)
-    tenths = multipliers[min(good_count, len(multipliers)) - 1]
-    if tenths % 10 == 0:
-        return f"{tenths // 10}x"
-    value = tenths / 10
-    return f"{value:.2f}".rstrip("0").rstrip(".") + "x"
-
-
-def mode_multiplier_text(mode: str | int = RANDOM_MODE) -> str:
-    return "｜".join(current_multiplier_text(index + 1, mode) for index in range(len(get_mode_multipliers(mode))))
-
-
-def _format_board(game: dict, reveal_all: bool = False) -> str:
-    cells = []
-    revealed = set(game.get("revealed", []))
-    deck = game["deck"]
-    for index, sign in enumerate(deck):
-        if reveal_all or index in revealed:
-            face = "吉" if sign == "吉" else "凶"
-        else:
-            face = "?"
-        cells.append(f"{index + 1}.{face}")
-    return "  ".join(cells)
-
-
-def _format_ink_trace_options(game: dict) -> str:
-    excluded = set(game.get("excluded", []))
-    return "  ".join(f"{option}{'（空）' if option in excluded else ''}" for option in game["options"])
-
-
-def _status_line(game: dict) -> str:
-    good_count = int(game.get("good_count", 0))
-    mode = game.get("mode", RANDOM_MODE)
-    reward = calculate_reward_wine(game["stake_wine"], good_count, mode)
-    return (
-        f"已翻吉签：{good_count}/{SIGN_COUNT}\n"
-        f"当前倍率：{current_multiplier_text(good_count, mode)}\n"
-        f"当前可收：{reward} 酒钱"
+    return _tavern_storage.exchange_points_to_wine(
+        user_id,
+        group_id,
+        points_amount,
+        data_file=DATA_FILE,
+        points_to_wine=points_to_wine,
+        logger=logger,
     )
 
 
-def _render_tavern_help() -> str:
-    return (
-        "🍶 太白酒馆 🍶\n"
-        f"{'=' * 20}\n"
-        "（本猫推开木门，酒旗在檐下慢慢晃）进了太白酒馆，先认这枚酒钱。\n"
-        "积分可在柜上添作酒钱：1 积分，换 10 酒钱。\n"
-        "酒钱入了壶，便在馆中流转；今日翻签，来日添新局，也都从这只酒壶里斟。\n"
-        f"{'=' * 20}\n"
-        "/酒钱 - 查看酒馆酒钱\n"
-        "/兑换酒钱 积分数 - 添酒钱入壶\n"
-        "/灵签翻盘 酒钱数 [凶签数] - 入灵签桌\n"
-        "/墨宝寻踪 酒钱数 - 入旧卷寻墨宝\n"
-        f"{'=' * 20}\n"
-        "灵签翻盘：五签覆面，自选其一翻开；吉签可收，凶签清桌。\n"
-        "不写凶签数，便听酒馆随机排签；写 1-4，则凶签越多，彩头越高。\n"
-        "墨宝寻踪：本猫把不同墨宝藏进酒、月、剑、花、云、舟之中；各有轻重，也各有彩头。\n"
-        f"{'=' * 20}\n"
-        "『酒旗斜挂月初明，\n"
-        "一分换得十钱声。\n"
-        "莫问杯中归旧账，\n"
-        "且留馆里续新程。』"
+def prepare_wine_stake(user_id: str, group_id: str, stake_wine: int) -> dict:
+    return _tavern_storage.prepare_wine_stake(
+        user_id,
+        group_id,
+        stake_wine,
+        data_file=DATA_FILE,
+        points_needed_for_wine=points_needed_for_wine,
     )
 
 
@@ -514,6 +304,9 @@ give_up = on_command("弃签", priority=5, block=True)
 start_ink_trace = on_command("墨宝寻踪", aliases={"墨宝"}, priority=5, block=True)
 guess_ink_trace = on_command("寻踪", priority=5, block=True)
 stargaze_ink_trace = on_command("观星", priority=5, block=True)
+start_rps_duel = on_command("对饮猜拳", aliases={"酒令猜拳", "猜拳对盏"}, priority=5, block=True)
+accept_rps_duel = on_command("接盏", aliases={"应战猜拳"}, priority=5, block=True)
+decline_rps_duel = on_command("拒盏", priority=5, block=True)
 
 
 @tavern.handle()
@@ -630,20 +423,15 @@ async def handle_start_flip(bot: Bot, event: MessageEvent, args: Message = Comma
 
     wine_money = start_args["wine_money"]
     mode = start_args["mode"]
-    stake_result = prepare_wine_stake(user_id, group_id, wine_money)
-    if stake_result["status"] == "insufficient_wine":
+    wine_balance_value = get_wine_money(user_id, group_id)
+    if wine_balance_value < wine_money:
+        shortfall = wine_money - wine_balance_value
         await start_flip.finish(
             "（拨了拨酒馆账珠）这桌酒钱还差些。\n"
             f"入场需：{wine_money} 酒钱\n"
-            f"现有酒钱：{stake_result['wine_balance']}\n"
-            f"还差酒钱：{stake_result['shortfall']}（可先用 /兑换酒钱 {stake_result['point_cost']} 添酒）\n"
+            f"现有酒钱：{wine_balance_value}\n"
+            f"还差酒钱：{shortfall}（可先用 /兑换酒钱 {points_needed_for_wine(shortfall)} 添酒）\n"
             "『酒未入壶桌不开，先添一盏再翻签。』"
-        )
-
-    if stake_result["status"] != "ok":
-        await start_flip.finish(
-            "（账珠忽停）这笔酒钱暂未落桌，请稍后再试。\n"
-            "『算盘偶乱杯中月，重来一声便可开。』"
         )
 
     nickname = await get_nickname(bot, user_id, context="太白酒馆")
@@ -660,6 +448,29 @@ async def handle_start_flip(bot: Bot, event: MessageEvent, args: Message = Comma
         "nickname": nickname,
         "started_at": now,
     }
+    service = _round_service()
+    round_id = new_round_id(FLIP_GAME_TYPE)
+    game["round_id"] = round_id
+    service.create_round(
+        round_id=round_id,
+        game_type=FLIP_GAME_TYPE,
+        mode="personal",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_WINE_MONEY,
+        feature_key=FEATURE_KEY,
+        payload=game,
+        participants=[{"user_id": user_id, "amount": wine_money}],
+    )
+    charge = service.freeze_participant(round_id, user_id)
+    if not charge["ok"]:
+        service.refund_round(round_id, reason="insufficient_balance")
+        await start_flip.finish(
+            "（拨了拨酒馆账珠）这桌酒钱还差些。\n"
+            f"入场需：{wine_money} 酒钱\n"
+            f"现有酒钱：{charge['balance']}\n"
+            "『酒未入壶桌不开，先添一盏再翻签。』"
+        )
     active_games[game_key] = game
     cooldown[game_key] = now
 
@@ -671,7 +482,7 @@ async def handle_start_flip(bot: Bot, event: MessageEvent, args: Message = Comma
         f"局型：{get_mode_label(mode)}\n"
         f"倍率：{mode_multiplier_text(mode)}\n"
         f"入场：{wine_money} 酒钱\n"
-        f"酒钱余额：{stake_result['wine_balance']}\n"
+        f"酒钱余额：{charge['balance']}\n"
         f"{'=' * 20}\n"
         f"{_format_board(game)}\n"
         f"{_status_line(game)}\n"
@@ -711,12 +522,16 @@ async def handle_reveal_sign(event: MessageEvent, args: Message = CommandArg()):
         )
 
     if not hidden_indexes:
-        active_games.pop(game_key, None)
         reward = calculate_reward_wine(game["stake_wine"], max_good_count, mode)
-        if reward > 0:
-            record = add_wine_money(game["user_id"], game["group_id"], reward)
-        else:
-            record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
+        service = _round_service()
+        service.prepare_settlement(
+            game["round_id"],
+            result={"reason": "all_signs", "reward": reward, "game": game},
+            payouts={game["user_id"]: reward},
+        )
+        service.settle_round(game["round_id"])
+        active_games.pop(game_key, None)
+        record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
         await reveal_sign.finish(
             "🍶 太白酒馆·满签结算 🍶\n"
             f"{'=' * 20}\n"
@@ -735,6 +550,13 @@ async def handle_reveal_sign(event: MessageEvent, args: Message = CommandArg()):
     game["revealed"].append(sign_index)
     sign = game["deck"][sign_index]
     if sign == "凶":
+        service = _round_service()
+        service.prepare_settlement(
+            game["round_id"],
+            result={"reason": "bad_sign", "position": position, "game": game},
+            payouts={game["user_id"]: 0},
+        )
+        service.settle_round(game["round_id"])
         active_games.pop(game_key, None)
         balance = get_wine_money(game["user_id"], game["group_id"])
         await reveal_sign.finish(
@@ -755,9 +577,16 @@ async def handle_reveal_sign(event: MessageEvent, args: Message = CommandArg()):
     game["good_count"] += 1
     good_count = game["good_count"]
     if good_count >= max_good_count:
-        active_games.pop(game_key, None)
         reward = calculate_reward_wine(game["stake_wine"], good_count, mode)
-        record = add_wine_money(game["user_id"], game["group_id"], reward)
+        service = _round_service()
+        service.prepare_settlement(
+            game["round_id"],
+            result={"reason": "max_good_signs", "reward": reward, "game": game},
+            payouts={game["user_id"]: reward},
+        )
+        service.settle_round(game["round_id"])
+        active_games.pop(game_key, None)
+        record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
         await reveal_sign.finish(
             "🍶 太白酒馆·满签结算 🍶\n"
             f"{'=' * 20}\n"
@@ -773,6 +602,7 @@ async def handle_reveal_sign(event: MessageEvent, args: Message = CommandArg()):
             "青灯偏爱稳中行。』"
         )
 
+    _round_service().update_payload(game["round_id"], game)
     await reveal_sign.finish(
         "🍶 太白酒馆·灵签翻盘 🍶\n"
         f"{'=' * 20}\n"
@@ -794,14 +624,19 @@ async def handle_cash_out(event: MessageEvent):
     if game_key not in active_games:
         await cash_out.finish("（看了看空桌）眼下没有可收的灵签翻盘。")
 
-    game = active_games.pop(game_key)
+    game = active_games[game_key]
     good_count = int(game.get("good_count", 0))
     if good_count <= 0:
         refund = calculate_refund_wine(game["stake_wine"])
-        if refund > 0:
-            record = add_wine_money(game["user_id"], game["group_id"], refund)
-        else:
-            record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
+        service = _round_service()
+        service.prepare_settlement(
+            game["round_id"],
+            result={"reason": "cash_out_without_good", "refund": refund},
+            payouts={game["user_id"]: refund},
+        )
+        service.settle_round(game["round_id"])
+        active_games.pop(game_key, None)
+        record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
         await cash_out.finish(
             "🍶 太白酒馆·空签收桌 🍶\n"
             f"{'=' * 20}\n"
@@ -814,7 +649,15 @@ async def handle_cash_out(event: MessageEvent):
 
     mode = game.get("mode", RANDOM_MODE)
     reward = calculate_reward_wine(game["stake_wine"], good_count, mode)
-    record = add_wine_money(game["user_id"], game["group_id"], reward)
+    service = _round_service()
+    service.prepare_settlement(
+        game["round_id"],
+        result={"reason": "cash_out", "good_count": good_count, "reward": reward},
+        payouts={game["user_id"]: reward},
+    )
+    service.settle_round(game["round_id"])
+    active_games.pop(game_key, None)
+    record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
     profit = reward - game["stake_wine"]
     profit_text = f"+{profit}" if profit >= 0 else str(profit)
     await cash_out.finish(
@@ -845,12 +688,17 @@ async def handle_give_up(event: MessageEvent):
     if game_key not in active_games:
         await give_up.finish("（看了看空桌）眼下没有可弃的灵签翻盘。")
 
-    game = active_games.pop(game_key)
+    game = active_games[game_key]
     refund = calculate_refund_wine(game["stake_wine"])
-    if refund > 0:
-        record = add_wine_money(game["user_id"], game["group_id"], refund)
-    else:
-        record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
+    service = _round_service()
+    service.prepare_settlement(
+        game["round_id"],
+        result={"reason": "give_up", "refund": refund},
+        payouts={game["user_id"]: refund},
+    )
+    service.settle_round(game["round_id"])
+    active_games.pop(game_key, None)
+    record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
     await give_up.finish(
         "🍶 太白酒馆·弃签退桌 🍶\n"
         f"{'=' * 20}\n"
@@ -899,24 +747,42 @@ async def handle_start_ink_trace(bot: Bot, event: MessageEvent, args: Message = 
             "『旧卷半开风带墨，且寻明月到杯中。』"
         )
 
-    stake_result = prepare_wine_stake(user_id, group_id, wine_money)
-    if stake_result["status"] == "insufficient_wine":
+    wine_balance_value = get_wine_money(user_id, group_id)
+    if wine_balance_value < wine_money:
+        shortfall = wine_money - wine_balance_value
         await start_ink_trace.finish(
             "（本猫摸了摸酒壶）这回寻墨的酒钱还差些。\n"
             f"入卷需：{wine_money} 酒钱\n"
-            f"现有酒钱：{stake_result['wine_balance']}\n"
-            f"还差酒钱：{stake_result['shortfall']}（可先用 /兑换酒钱 {stake_result['point_cost']} 添酒）\n"
+            f"现有酒钱：{wine_balance_value}\n"
+            f"还差酒钱：{shortfall}（可先用 /兑换酒钱 {points_needed_for_wine(shortfall)} 添酒）\n"
             "『壶中未满难开卷，先添一盏再寻诗。』"
-        )
-
-    if stake_result["status"] != "ok":
-        await start_ink_trace.finish(
-            "（旧卷边角忽然一皱）这笔酒钱暂未落案，请稍后再试。\n"
-            "『墨痕偶被灯花乱，重来一声便可寻。』"
         )
 
     nickname = await get_nickname(bot, user_id, context="太白酒馆")
     game = new_ink_trace_game(wine_money, user_id, group_id, nickname)
+    service = _round_service()
+    round_id = new_round_id(INK_GAME_TYPE)
+    game["round_id"] = round_id
+    service.create_round(
+        round_id=round_id,
+        game_type=INK_GAME_TYPE,
+        mode="personal",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_WINE_MONEY,
+        feature_key=FEATURE_KEY,
+        payload=game,
+        participants=[{"user_id": user_id, "amount": wine_money}],
+    )
+    charge = service.freeze_participant(round_id, user_id)
+    if not charge["ok"]:
+        service.refund_round(round_id, reason="insufficient_balance")
+        await start_ink_trace.finish(
+            "（本猫摸了摸酒壶）这回寻墨的酒钱还差些。\n"
+            f"入卷需：{wine_money} 酒钱\n"
+            f"现有酒钱：{charge['balance']}\n"
+            "『壶中未满难开卷，先添一盏再寻诗。』"
+        )
     active_ink_traces[game_key] = game
     stargaze_cost = calculate_ink_trace_stargaze_cost(wine_money)
 
@@ -926,7 +792,7 @@ async def handle_start_ink_trace(bot: Bot, event: MessageEvent, args: Message = 
         "（本猫翻开一轴旧卷，又把酒壶往袖中一藏）墨痕已藏，且看谁能寻到诗眼。\n"
         f"玩家：{nickname}\n"
         f"入卷：{wine_money} 酒钱\n"
-        f"酒钱余额：{stake_result['wine_balance']}\n"
+        f"酒钱余额：{charge['balance']}\n"
         f"{'=' * 20}\n"
         f"意象：{_format_ink_trace_options(game)}\n"
         f"{'=' * 20}\n"
@@ -952,21 +818,49 @@ async def handle_stargaze_ink_trace(event: MessageEvent):
         )
 
     cost = calculate_ink_trace_stargaze_cost(game["stake_wine"])
-    spend_result = spend_wine_money(game["user_id"], game["group_id"], cost)
-    if not spend_result["ok"]:
+    wine_balance_value = get_wine_money(game["user_id"], game["group_id"])
+    if wine_balance_value < cost:
         await stargaze_ink_trace.finish(
             "（本猫摸了摸酒壶）观星还差一点酒钱。\n"
             f"观星需：{cost} 酒钱\n"
-            f"现有酒钱：{spend_result['balance']}\n"
+            f"现有酒钱：{wine_balance_value}\n"
             "『星盘也要沾杯气，添些酒钱再问天。』"
         )
 
-    revealed = reveal_wrong_ink_trace_option(game)
+    excluded = set(game.get("excluded", []))
+    candidates = [
+        option
+        for option in game["options"]
+        if option != game["treasure"] and option not in excluded
+    ]
+    revealed = random.choice(candidates) if candidates else None
     if revealed is None:
         await stargaze_ink_trace.finish(
             "（星光落到卷心）这一卷已无可排的空意象。\n"
-            f"酒钱余额：{spend_result['balance']}"
+            f"酒钱余额：{wine_balance_value}"
         )
+
+    service = _round_service()
+    participant_id = f"stargaze:{game['user_id']}"
+    service.add_participant(
+        game["round_id"],
+        participant_id=participant_id,
+        user_id=game["user_id"],
+        amount=cost,
+        metadata={"role": "auxiliary", "kind": "stargaze", "revealed": revealed},
+    )
+    charge = service.freeze_participant(game["round_id"], participant_id)
+    if not charge["ok"]:
+        await stargaze_ink_trace.finish(
+            "（本猫摸了摸酒壶）观星还差一点酒钱。\n"
+            f"观星需：{cost} 酒钱\n"
+            f"现有酒钱：{charge['balance']}\n"
+            "『星盘也要沾杯气，添些酒钱再问天。』"
+        )
+    game.setdefault("excluded", []).append(revealed)
+    game["stargazed"] = True
+    service.update_payload(game["round_id"], game)
+    service.settle_participant(game["round_id"], participant_id)
 
     await stargaze_ink_trace.finish(
         "🍶 太白酒馆·墨宝观星 🍶\n"
@@ -974,7 +868,7 @@ async def handle_stargaze_ink_trace(event: MessageEvent):
         "（本猫眯眼望星，袖中旧卷沙沙一响）这处没有墨宝。\n"
         f"排除：{revealed}\n"
         f"消耗：{cost} 酒钱\n"
-        f"酒钱余额：{spend_result['balance']}\n"
+        f"酒钱余额：{charge['balance']}\n"
         f"{'=' * 20}\n"
         f"意象：{_format_ink_trace_options(game)}\n"
         "落子：/寻踪 意象"
@@ -1006,10 +900,17 @@ async def handle_guess_ink_trace(event: MessageEvent, args: Message = CommandArg
             "『空处不须重下笔，另寻一字问青天。』"
         )
 
-    active_ink_traces.pop(game_key, None)
     if guess == game["treasure"]:
         reward = calculate_ink_trace_reward_wine(game["stake_wine"], game["treasure"])
-        record = add_wine_money(game["user_id"], game["group_id"], reward)
+        service = _round_service()
+        service.prepare_settlement(
+            game["round_id"],
+            result={"reason": "found", "guess": guess, "reward": reward},
+            payouts={game["user_id"]: reward},
+        )
+        service.settle_round(game["round_id"])
+        active_ink_traces.pop(game_key, None)
+        record = {"wine_money": get_wine_money(game["user_id"], game["group_id"])}
         profit = reward - game["stake_wine"]
         await guess_ink_trace.finish(
             "🍶 太白酒馆·墨宝寻踪 🍶\n"
@@ -1026,6 +927,14 @@ async def handle_guess_ink_trace(event: MessageEvent, args: Message = CommandArg
             "醉里青天也有门。』"
         )
 
+    service = _round_service()
+    service.prepare_settlement(
+        game["round_id"],
+        result={"reason": "missed", "guess": guess, "treasure": game["treasure"]},
+        payouts={game["user_id"]: 0},
+    )
+    service.settle_round(game["round_id"])
+    active_ink_traces.pop(game_key, None)
     balance = get_wine_money(game["user_id"], game["group_id"])
     await guess_ink_trace.finish(
         "🍶 太白酒馆·墨宝寻踪 🍶\n"
@@ -1040,4 +949,174 @@ async def handle_guess_ink_trace(event: MessageEvent, args: Message = CommandArg
         "酒壶轻响笑前因。\n"
         "输赢且作风中过，\n"
         "明日重翻旧卷尘。』"
+    )
+
+
+@start_rps_duel.handle()
+async def handle_start_rps_duel(bot: Bot, event: MessageEvent, args: Message = CommandArg()):
+    if not isinstance(event, GroupMessageEvent):
+        await start_rps_duel.finish(
+            "（本猫把两只酒盏收回袖中）对饮猜拳要在群里邀友开桌。\n"
+            "『独坐难成双拳局，且向人声借一杯。』"
+        )
+
+    parsed = parse_rps_challenge_args(args)
+    if parsed is None:
+        await start_rps_duel.finish(
+            "🍶 太白酒馆·对饮猜拳 🍶\n"
+            f"{'=' * 20}\n"
+            "用法：/对饮猜拳 @群友 酒钱数\n"
+            "例：/对饮猜拳 @群友 20\n"
+            f"{'=' * 20}\n"
+            "对方接盏后，双方各封同额酒钱；本猫依次发送两枚 QQ 原生猜拳，胜者收双份，平局各归原额。\n"
+            "『先邀知己临风坐，再看双拳落酒台。』"
+        )
+
+    challenger_id = event.get_user_id()
+    target_id = parsed["target_id"]
+    stake_wine = parsed["stake_wine"]
+    if target_id == challenger_id:
+        await start_rps_duel.finish(
+            "（本猫按住你左右互碰的两只手）自己不能向自己邀拳。\n"
+            "『一人纵有双拳在，也少同杯对饮声。』"
+        )
+    if target_id == str(event.self_id):
+        await start_rps_duel.finish(
+            "（本猫晃晃酒壶）这局要请群友对饮，本猫只掌拳、记账，不亲自下场。\n"
+            "『酒旗今日司公断，且请双客各登台。』"
+        )
+
+    group_id = str(event.group_id)
+    challenger_balance = get_wine_money(challenger_id, group_id)
+    if challenger_balance < stake_wine:
+        shortfall = stake_wine - challenger_balance
+        await start_rps_duel.finish(
+            "（本猫拨了拨邀拳酒盏）你的酒钱还不够摆下这一桌。\n"
+            f"每人需封：{stake_wine} 酒钱\n"
+            f"你的酒钱：{challenger_balance}\n"
+            f"还差酒钱：{shortfall}（可先用 /兑换酒钱 {points_needed_for_wine(shortfall)} 添酒）\n"
+            "『杯中未满休催拳，添得新醅再请君。』"
+        )
+
+    challenger_nickname = await get_nickname(bot, challenger_id, context="太白酒馆对饮猜拳")
+    target_nickname = await get_nickname(bot, target_id, context="太白酒馆对饮猜拳")
+    lock = rps_duel_locks.setdefault(group_id, asyncio.Lock())
+    async with lock:
+        if group_id in active_rps_duels:
+            await start_rps_duel.finish(
+                "（本猫指指桌上尚未散去的拳影）本桌已有一局对饮猜拳正在验拳，请稍候。"
+            )
+
+        existing = pending_rps_challenges.get(group_id)
+        if existing is not None and _challenge_expired(existing):
+            pending_rps_challenges.pop(group_id, None)
+            existing = None
+        if existing is not None:
+            await start_rps_duel.finish(
+                "（本猫按住新端来的酒盏）本桌已有一封邀拳尚待回应，可先用 /接盏 或 /拒盏 了结。"
+            )
+
+        challenge_id = new_round_id("tavern_rps_challenge")
+        challenge = {
+            "challenge_id": challenge_id,
+            "group_id": group_id,
+            "challenger_id": challenger_id,
+            "challenger_nickname": challenger_nickname,
+            "target_id": target_id,
+            "target_nickname": target_nickname,
+            "stake_wine": stake_wine,
+            "created_at": time.time(),
+            "expires_at": time.time() + RPS_CHALLENGE_TIMEOUT_SECONDS,
+        }
+        pending_rps_challenges[group_id] = challenge
+        asyncio.create_task(_expire_pending_rps_challenge(bot, group_id, challenge_id))
+
+    await start_rps_duel.finish(
+        "🍶 太白酒馆·对饮猜拳邀盏 🍶\n"
+        f"{'=' * 20}\n"
+        f"邀拳：{challenger_nickname}\n"
+        f"受邀：{target_nickname}\n"
+        f"每人酒钱：{stake_wine}\n"
+        f"{'=' * 20}\n"
+        f"{target_nickname} 请在 {RPS_CHALLENGE_TIMEOUT_SECONDS} 秒内用 /接盏 应战，或用 /拒盏 婉拒。\n"
+        "接盏前不扣酒钱；接盏后由本猫发送两枚 QQ 原生猜拳并据实结算。\n"
+        "『两盏先陈青案上，等君一诺起拳风。』"
+    )
+
+
+@accept_rps_duel.handle()
+async def handle_accept_rps_duel(bot: Bot, event: MessageEvent):
+    if not isinstance(event, GroupMessageEvent):
+        await accept_rps_duel.finish("（本猫合上空账）接盏要回到发出邀拳的群里。")
+
+    group_id = str(event.group_id)
+    user_id = event.get_user_id()
+    service = _round_service()
+    lock = rps_duel_locks.setdefault(group_id, asyncio.Lock())
+    async with lock:
+        challenge = pending_rps_challenges.get(group_id)
+        if challenge is None:
+            await accept_rps_duel.finish(
+                "（本猫看看空桌）眼下没有待接的猜拳酒盏，可用 /对饮猜拳 @群友 酒钱数 发起。"
+            )
+        if _challenge_expired(challenge):
+            pending_rps_challenges.pop(group_id, None)
+            await accept_rps_duel.finish(
+                "（本猫摸摸已经凉下来的酒盏）这封邀拳已过时，尚未扣取任何酒钱，请重新邀盏。"
+            )
+        if user_id != challenge["target_id"]:
+            await accept_rps_duel.finish(
+                f"（本猫把酒盏转回原位）这一盏是留给 {challenge['target_nickname']} 的，旁人不能代接。"
+            )
+        if group_id in active_rps_duels:
+            await accept_rps_duel.finish("（本猫按住账页）这一桌已经开拳，莫重复接盏。")
+
+        pending_rps_challenges.pop(group_id, None)
+        try:
+            result = create_rps_duel_round(challenge, service=service)
+        except Exception as exc:
+            logger.exception(f"创建对饮猜拳付费回合失败 group_id={group_id}: {exc}")
+            await accept_rps_duel.finish(
+                "（柜上两枚账珠忽然相撞）这局暂未开成，若有酒钱落账也会原路归壶，请稍后再邀。\n"
+                "『拳未登台账先止，待灯重稳再开杯。』"
+            )
+
+        if result["status"] != "ok":
+            short_name = challenge[
+                "challenger_nickname"
+                if result["status"] == "challenger_insufficient_wine"
+                else "target_nickname"
+            ]
+            await accept_rps_duel.finish(
+                "（本猫把两只尚未开拳的酒盏一并退回）有人酒钱不足，本局未成，双方都未损酒钱。\n"
+                f"不足者：{short_name}\n"
+                f"每人需封：{challenge['stake_wine']} 酒钱\n"
+                f"当前酒钱：{result['balance']}\n"
+                "『一盏未盈双客止，添酒之后再论拳。』"
+            )
+
+    await _settle_rps_duel(bot, group_id, service=service)
+
+
+@decline_rps_duel.handle()
+async def handle_decline_rps_duel(event: MessageEvent):
+    if not isinstance(event, GroupMessageEvent):
+        await decline_rps_duel.finish("（本猫收起空盏）拒盏要回到发出邀拳的群里。")
+
+    group_id = str(event.group_id)
+    user_id = event.get_user_id()
+    lock = rps_duel_locks.setdefault(group_id, asyncio.Lock())
+    async with lock:
+        challenge = pending_rps_challenges.get(group_id)
+        if challenge is None:
+            if group_id in active_rps_duels:
+                await decline_rps_duel.finish("（本猫按住已落账的酒盏）双方既已接盏开拳，便不能再以拒盏撤局。")
+            await decline_rps_duel.finish("（本猫看看空桌）眼下没有待回的猜拳酒盏。")
+        if user_id not in {challenge["challenger_id"], challenge["target_id"]}:
+            await decline_rps_duel.finish("（本猫轻敲桌沿）这封邀拳与你无关，不可替人收盏。")
+        pending_rps_challenges.pop(group_id, None)
+
+    await decline_rps_duel.finish(
+        "（本猫把两只尚未斟满的酒盏收回柜上）此番邀拳作罢，尚未扣取任何酒钱。\n"
+        "『今日无拳杯仍暖，改时相见再同斟。』"
     )

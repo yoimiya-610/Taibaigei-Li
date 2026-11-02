@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="points",
+    name="积分排行",
+    default_enabled=True,
+    scope="group",
+    permission_level=3,
+    data_files=("data/points.json", "data/titles.json"),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -6,6 +20,14 @@ from nonebot import on_command
 from nonebot.adapters.onebot.v11 import Message, MessageEvent, Bot, GroupMessageEvent
 from nonebot.params import CommandArg
 
+from mybot.common.accounting import (
+    add_points as accounting_add_points,
+    add_points_once as accounting_add_points_once,
+    get_points as accounting_get_points,
+    refund_points as accounting_refund_points,
+    spend_points as accounting_spend_points,
+)
+from mybot.common.ai_public_play_guides import PublicPlayGuideEntry
 from mybot.common.help_registry import HelpItem
 from mybot.common.json_store import load_json, mutate_json, save_json
 from mybot.common.streak import get_current_streak, get_streak_evaluation
@@ -45,6 +67,39 @@ LOW_INCOME_THRESHOLD = 100
 LOW_INCOME_REWARD = 100
 LOW_INCOME_DATE_FIELD = "last_low_income_date"
 
+PUBLIC_PLAY_GUIDES = (
+    PublicPlayGuideEntry(
+        key="points_account",
+        keywords=("积分", "余额", "排行榜", "积分榜", "富豪榜", "查分"),
+        intents=("怎么查", "查看", "查询", "命令", "规则", "累计", "当前", "排行"),
+        public_explanation=(
+            "积分按群分别记账，/积分 会显示当前积分、累计获得、连续签到和称号概况；"
+            "/排行榜 按本群累计获得积分排序，当前积分只作同分时的参考。"
+        ),
+        related_commands=("/积分", "/排行榜"),
+    ),
+    PublicPlayGuideEntry(
+        key="low_income",
+        keywords=("低保", "不足百", "不足100", "低于100", "领保"),
+        intents=("怎么领", "领取", "规则", "条件", "多少", "每天", "每日", "命令"),
+        public_explanation=(
+            f"低保给当前积分低于 {LOW_INCOME_THRESHOLD} 的诗友每日领取一次；"
+            f"成功后本猫添上 {LOW_INCOME_REWARD} 积分，并计入累计获得。"
+        ),
+        related_commands=("/低保", "/积分"),
+    ),
+    PublicPlayGuideEntry(
+        key="personal_realtime_status",
+        keywords=("积分", "余额", "酒钱", "签到", "低保", "称号", "名号", "魅力", "礼物", "公开贡献", "今天"),
+        intents=("我有多少", "当前多少", "还剩多少", "今天签过", "领过", "我的称号", "我的状态"),
+        public_explanation=(
+            "普通群聊里明确询问本人积分、今日签到或礼物背包时，本猫可以从当前群的只读卷册据实回答；"
+            "不能查询他人或其他群，也不能代为签到、送礼或改动状态。/我的卷册 可查看更完整的本人总览。"
+        ),
+        related_commands=("/我的卷册", "/积分", "/酒钱", "/称号", "/低保", "/签到"),
+    ),
+)
+
 # 确保数据目录存在
 POINTS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -67,80 +122,24 @@ def current_date_text() -> str:
 
 def get_points(user_id: str, group_id: str) -> dict:
     """获取用户积分"""
-    key = f"{group_id}_{user_id}"
-
-    def mutator(data: dict) -> dict:
-        if key not in data:
-            data[key] = _new_points_record(user_id, group_id)
-        return dict(data[key])
-
-    return mutate_json(POINTS_FILE, {}, mutator)
+    return accounting_get_points(user_id, group_id, store_path=POINTS_FILE)
 
 def add_points(user_id: str, group_id: str, amount: int) -> dict:
     """增加积分"""
-    key = f"{group_id}_{user_id}"
-
-    def mutator(data: dict) -> dict:
-        if key not in data:
-            data[key] = _new_points_record(user_id, group_id)
-
-        data[key]["current"] += amount
-        if amount > 0:
-            data[key]["total"] += amount
-        return dict(data[key])
-
-    return mutate_json(POINTS_FILE, {}, mutator)
+    return accounting_add_points(user_id, group_id, amount, store_path=POINTS_FILE)
 
 
 def add_points_once(user_id: str, group_id: str, amount: int, tx_id: str) -> dict:
     """按交易号增加积分；同一交易号重复提交不会重复入账。"""
-    key = f"{group_id}_{user_id}"
-
-    def mutator(data: dict) -> dict:
-        if key not in data:
-            data[key] = _new_points_record(user_id, group_id)
-
-        transactions = data[key].setdefault("transactions", [])
-        if not isinstance(transactions, list):
-            transactions = []
-            data[key]["transactions"] = transactions
-        if tx_id in transactions:
-            return {"applied": False, "record": dict(data[key])}
-
-        data[key]["current"] += amount
-        if amount > 0:
-            data[key]["total"] += amount
-        transactions.append(tx_id)
-        return {"applied": True, "record": dict(data[key])}
-
-    return mutate_json(POINTS_FILE, {}, mutator)
+    return accounting_add_points_once(user_id, group_id, amount, tx_id, store_path=POINTS_FILE)
 
 def spend_points(user_id: str, group_id: str, amount: int) -> bool:
     """消费积分"""
-    key = f"{group_id}_{user_id}"
-
-    def mutator(data: dict) -> bool:
-        if key not in data:
-            return False
-        if data[key]["current"] < amount:
-            return False
-        data[key]["current"] -= amount
-        return True
-
-    return mutate_json(POINTS_FILE, {}, mutator)
+    return accounting_spend_points(user_id, group_id, amount, store_path=POINTS_FILE)
 
 def refund_points(user_id: str, group_id: str, amount: int) -> dict:
     """退还积分，只恢复当前积分，不增加累计获得"""
-    key = f"{group_id}_{user_id}"
-
-    def mutator(data: dict) -> dict:
-        if key not in data:
-            data[key] = _new_points_record(user_id, group_id)
-
-        data[key]["current"] += amount
-        return dict(data[key])
-
-    return mutate_json(POINTS_FILE, {}, mutator)
+    return accounting_refund_points(user_id, group_id, amount, store_path=POINTS_FILE)
 
 
 def claim_low_income(user_id: str, group_id: str, today: str | None = None) -> dict:

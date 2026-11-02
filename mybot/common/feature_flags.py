@@ -4,62 +4,19 @@ import sys
 from types import ModuleType
 
 from mybot.common.json_store import load_json, mutate_json
-from mybot.common.legacy_games import LEGACY_GAME_BY_MODULE, LEGACY_GAME_NAMES, LEGACY_GAME_ORDER
+from mybot.common.legacy_games import LEGACY_GAME_ORDER
+from mybot.common.plugin_metadata import (
+    DEFAULT_FEATURE_ENABLED,
+    FEATURE_NAMES,
+    canonical_feature_key,
+    get_plugin_metadata_for_feature,
+    get_plugin_metadata_for_module,
+)
 
 
 FEATURE_FLAGS_FILE = Path(__file__).resolve().parent.parent / "data" / "feature_flags.json"
 LEGACY_GAME_OVERRIDES_FILE = Path(__file__).resolve().parent.parent / "data" / "legacy_game_overrides.json"
-PROTECTED_FEATURES = {"admin_console", "onebot_diagnostics"}
-DISABLED_PLUGIN_FEATURES = {
-    module_name: game.feature_key
-    for module_name, game in LEGACY_GAME_BY_MODULE.items()
-}
-FEATURE_ALIASES = {
-    "youyimiya": "yoimiya",
-}
-DEFAULT_FEATURE_ENABLED = {
-    "group_chat_logs": True,
-    "legacy_blackjack": False,
-    "legacy_dice": False,
-    "legacy_race": False,
-    "legacy_roulette": False,
-    "legacy_scratch": False,
-    "legacy_slot": False,
-}
 LEGACY_GAME_SET = set(LEGACY_GAME_ORDER)
-
-FEATURE_NAMES = {
-    "admin_console": "管理员控制台",
-    "ai_cache": "AI缓存",
-    "ai_chat": "普通AI对话",
-    "backup": "自动备份",
-    "blacklist": "黑名单",
-    "daily_greet": "每日问候",
-    "fortune": "签到运势",
-    "fun": "趣味功能",
-    "game_disabled": "小游戏状态",
-    "gift": "社交互动",
-    "group_chat_logs": "群聊记录",
-    "hello": "调试命令",
-    "help": "帮助菜单",
-    **LEGACY_GAME_NAMES,
-    "love": "情感互动",
-    "mini_commands": "彩蛋小令",
-    "monthly_fame": "月度风云榜",
-    "onebot_diagnostics": "OneBot 系统诊断",
-    "poem": "诗词文艺",
-    "poetry_game": "飞花令",
-    "points": "积分排行",
-    "premium_chat": "Pro对话档位",
-    "practical_tools": "实用功能",
-    "quotes": "群友语录本",
-    "rate_limit": "频率限制",
-    "riddle": "猜谜",
-    "taibai_tavern": "太白酒馆",
-    "roast_target": "代骂",
-    "translate": "翻译",
-    "yoimiya": "米亚介绍",
-}
 
 
 def _load_flags() -> dict:
@@ -86,11 +43,7 @@ def get_legacy_rotation_day_name(now: date | datetime | None = None) -> str:
 def is_legacy_game_scheduled(feature: str, now: date | datetime | None = None) -> bool:
     if feature not in LEGACY_GAME_SET:
         raise ValueError(f"unknown legacy feature: {feature}")
-
-    day = _coerce_day(now)
-    if day.weekday() >= len(LEGACY_GAME_ORDER):
-        return True
-    return LEGACY_GAME_ORDER[day.weekday()] == feature
+    return False
 
 
 def _load_legacy_overrides() -> dict:
@@ -109,9 +62,6 @@ def get_legacy_game_override(
         return None
 
     data = _load_legacy_overrides()
-    if data.get("date") != _rotation_token(now):
-        return None
-
     if group_id is None:
         value = data.get("overrides", {}).get(feature)
     else:
@@ -133,7 +83,7 @@ def get_legacy_game_enabled(
         global_override = get_legacy_game_override(feature, now)
         if global_override is not None:
             return global_override
-    return is_legacy_game_scheduled(feature, now)
+    return False
 
 
 def get_legacy_game_status(
@@ -150,7 +100,7 @@ def get_legacy_game_status(
     elif global_override is not None:
         mode = "全局" if group_id is not None else "人工"
     else:
-        mode = "轮换"
+        mode = "默认"
     return {
         "enabled": enabled,
         "scheduled": scheduled,
@@ -164,12 +114,13 @@ def get_feature_name(feature: str) -> str:
 
 
 def _canonical_feature(feature: str) -> str:
-    return FEATURE_ALIASES.get(feature, feature)
+    return canonical_feature_key(feature)
 
 
 def is_feature_enabled(feature: str, group_id: str | int | None = None) -> bool:
     feature = _canonical_feature(feature)
-    if feature in PROTECTED_FEATURES:
+    metadata = get_plugin_metadata_for_feature(feature)
+    if metadata is not None and metadata.protected:
         return True
     if feature in LEGACY_GAME_SET:
         return get_legacy_game_enabled(feature, group_id=group_id)
@@ -181,10 +132,11 @@ def is_feature_enabled(feature: str, group_id: str | int | None = None) -> bool:
     feature_values = flags.get("features", {})
     if feature in feature_values:
         return bool(feature_values[feature])
-    for alias, canonical in FEATURE_ALIASES.items():
-        if canonical == feature and alias in feature_values:
+    legacy_keys = metadata.legacy_feature_keys if metadata is not None else ()
+    for alias in legacy_keys:
+        if alias in feature_values:
             return bool(feature_values[alias])
-    default = DEFAULT_FEATURE_ENABLED.get(feature, True)
+    default = metadata.default_enabled if metadata is not None else True
     return bool(default)
 
 
@@ -194,15 +146,13 @@ def set_feature_enabled(
     group_id: str | int | None = None,
 ) -> None:
     feature = _canonical_feature(feature)
-    if feature in PROTECTED_FEATURES and not enabled:
+    metadata = get_plugin_metadata_for_feature(feature)
+    if metadata is not None and metadata.protected and not enabled:
         raise ValueError("protected_feature")
     if feature in LEGACY_GAME_SET:
         token = _rotation_token()
 
         def legacy_mutator(data: dict) -> None:
-            if data.get("date") != token:
-                data["overrides"] = {}
-                data["groups"] = {}
             data["date"] = token
             data.setdefault("overrides", {})
             if group_id is None:
@@ -236,16 +186,8 @@ def set_feature_enabled(
 
 
 def module_feature_key(module_name: str) -> str | None:
-    module_name = module_name.removeprefix("mybot.")
-    if module_name.startswith("plugins_disabled."):
-        module_key = module_name.rsplit(".", 1)[-1]
-        return DISABLED_PLUGIN_FEATURES.get(module_key)
-    if not module_name.startswith("plugins."):
-        return None
-    feature = module_name.rsplit(".", 1)[-1]
-    if feature.startswith("_"):
-        return None
-    return feature
+    metadata = get_plugin_metadata_for_module(module_name)
+    return metadata.feature_key if metadata is not None else None
 
 
 def _module_aliases(module: ModuleType) -> list[str]:
@@ -262,6 +204,8 @@ def _module_aliases(module: ModuleType) -> list[str]:
 
 
 def collect_features(group_id: str | int | None = None) -> list[dict]:
+    from mybot.common.help_registry import module_has_help_items
+
     features = []
     for module_name, module in list(sys.modules.items()):
         feature = module_feature_key(module_name)
@@ -272,8 +216,12 @@ def collect_features(group_id: str | int | None = None) -> list[dict]:
                 "key": feature,
                 "name": get_feature_name(feature),
                 "enabled": is_feature_enabled(feature, group_id),
-                "protected": feature in PROTECTED_FEATURES,
+                "protected": bool(
+                    (metadata := get_plugin_metadata_for_feature(feature))
+                    and metadata.protected
+                ),
                 "aliases": _module_aliases(module),
+                "public": module_has_help_items(module),
             }
         )
 
@@ -285,8 +233,9 @@ def resolve_feature(identifier: str) -> str | None:
     normalized = identifier.strip().lower()
     if not normalized:
         return None
-    if normalized in FEATURE_ALIASES:
-        return FEATURE_ALIASES[normalized]
+    canonical = canonical_feature_key(normalized)
+    if canonical != normalized:
+        return canonical
 
     for item in collect_features():
         if item["key"].lower() == normalized:

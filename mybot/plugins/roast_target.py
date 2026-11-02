@@ -1,11 +1,26 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="roast_target",
+    name="代骂",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    data_files=("data/points.json",),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import MessageEvent, Bot, GroupMessageEvent, Message
 from nonebot.params import CommandArg
-from mybot.plugins.points import refund_points, spend_points
+from mybot.common.accounting import refund_points, spend_points
 from mybot.common.ai_client import prompt_completion
 from mybot.common.help_registry import HelpItem
 from mybot.common.logger import get_plugin_logger
+from mybot.common.persona import build_persona_prompt
 from mybot.common.user_utils import get_nickname
 
 
@@ -15,12 +30,16 @@ HELP_ITEMS = (
 COMMAND_ALIASES = ("代骂", "帮我骂", "骂ta")
 
 
-SYSTEM_PROMPT = """你是"李太白给"，一只花花公子猫。自称"本猫"。
-要求用文雅、诗意但毒舌的方式骂人，不能用脏话，要有文化底蕴，可以引用典故，最后附带一首讽刺的打油诗。"""
+SYSTEM_PROMPT = build_persona_prompt(
+    """你负责文雅、诗意、点到为止地代群友吐槽目标。可以毒舌、引用可靠典故，但不能使用脏话、仇恨表达、威胁、隐私攻击或贬损受保护身份。
+笔锋应落在具体行为或轻巧玩笑上，不把侮辱升级成真实伤害。"""
+)
 
 ERROR_MESSAGES = [
-    "（酒壶轻晃）这一回笔锋未能落成，15 积分已原样归还。\n『墨痕未落风先起，且待来朝再写诗。』",
-    "（收起折扇）本猫今日没写成这封檄文，15 积分已送回账上。\n『酒醒重磨三尺墨，明朝再借一身风。』",
+    "（酒壶轻晃）这一回笔锋未能落成，15 积分已原样归还。\n"
+    "『墨痕未落风先起，\n且把锋芒收入诗。\n待得来朝重展卷，\n本猫再写四行辞。』",
+    "（收起折扇）本猫今日没写成这封檄文，15 积分已送回账上。\n"
+    "『酒醒重磨三尺墨，\n云开再借一身风。\n今宵暂把长锋敛，\n明日题诗笑语中。』",
 ]
 
 logger = get_plugin_logger(__name__)

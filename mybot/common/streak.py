@@ -63,6 +63,54 @@ def calculate_current_streak(
     return count
 
 
+def calculate_longest_streak(
+    data: dict,
+    user_id: str,
+    group_id: str,
+    today_date: date | None = None,
+) -> int:
+    """从同群旧记录恢复历史纪录；缓存值只增不减，兼容尚无 longest 的存档。"""
+    today_date = today_date or datetime.now(APP_TIMEZONE).date()
+    previous = data.get("streak", {}).get(streak_key(user_id, group_id), {})
+
+    def count_value(value) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    longest = max(count_value(previous.get("longest")), count_value(previous.get("count")))
+    dates = set()
+    suffix = f"_{group_id}_{user_id}"
+    for key, record in data.get("fortune_record", {}).items():
+        if not key.endswith(suffix):
+            continue
+        try:
+            signed_date = date.fromisoformat(key[:-len(suffix)])
+        except ValueError:
+            continue
+        if signed_date > today_date:
+            continue
+        dates.add(signed_date)
+        if isinstance(record, dict):
+            longest = max(longest, count_value(record.get("streak_count")))
+    for date_text in data.get("makeup_records", {}).get(streak_key(user_id, group_id), {}).get("dates", []):
+        try:
+            signed_date = date.fromisoformat(date_text)
+        except (TypeError, ValueError):
+            continue
+        if signed_date <= today_date:
+            dates.add(signed_date)
+
+    count = 0
+    previous_date = None
+    for signed_date in sorted(dates):
+        count = count + 1 if previous_date and signed_date - previous_date == timedelta(days=1) else 1
+        longest = max(longest, count)
+        previous_date = signed_date
+    return longest
+
+
 def sync_streak(
     data: dict,
     user_id: str,
@@ -70,6 +118,7 @@ def sync_streak(
     today_date: date | None = None,
 ) -> int:
     today_date = today_date or datetime.now(APP_TIMEZONE).date()
+    longest = calculate_longest_streak(data, user_id, group_id, today_date)
     count = calculate_current_streak(data, user_id, group_id, today_date)
     today_text = today_date.strftime("%Y-%m-%d")
     yesterday_text = (today_date - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -84,6 +133,7 @@ def sync_streak(
     data.setdefault("streak", {})[streak_key(user_id, group_id)] = {
         "count": count,
         "last_date": last_date,
+        "longest": max(longest, count),
     }
     return count
 

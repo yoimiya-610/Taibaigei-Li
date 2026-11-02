@@ -38,6 +38,13 @@ FORBIDDEN_EXACT_PATHS = {
     ".codex_pr_body.md",
     ".codex_release_notes_v0.2.2.md",
     "napcat.sh",
+    ".github/public-upstream-state.json",
+    ".github/public-upstream-conflict.json",
+    ".github/workflows/sync-public-upstream.yml",
+    "tools/export_public_release.py",
+    "tools/public_upstream_manifest.json",
+    "tools/sync_public_upstream.py",
+    "tools/stage_public_upstream_changes.py",
 }
 FORBIDDEN_SUFFIXES = {
     ".bak",
@@ -150,6 +157,9 @@ CONTENT_PATTERNS = (
 )
 IPV4_PATTERN = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])")
 ALLOWED_IPV4_LITERALS = {"0.0.0.0", "127.0.0.1"}
+# Deliberate SSRF rejection fixture, never a deployment address. All other
+# content checks, including credentials and paths, still apply to this file.
+SYNTHETIC_IPV4_FIXTURES = {"mybot/tests/test_image_library.py": {"10.0.0.1"}}
 
 
 class Finding:
@@ -224,6 +234,7 @@ def _content_findings(relative_path: Path, content: str) -> list[Finding]:
             octets[0] != "0"
             and all(int(octet) <= 255 for octet in octets)
             and value not in ALLOWED_IPV4_LITERALS
+            and value not in SYNTHETIC_IPV4_FIXTURES.get(relative_path.as_posix(), set())
         ):
             findings.append(Finding("private-host", relative_path, f"non-loopback IPv4 literal {value}"))
     return findings

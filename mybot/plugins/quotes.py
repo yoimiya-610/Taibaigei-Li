@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="quotes",
+    name="群友语录本",
+    default_enabled=True,
+    scope="group",
+    permission_level=3,
+    data_files=("data/classics.json",),
+    privacy_level="sensitive",
+    backup_policy="standard",
+)
+
 from datetime import datetime
 from pathlib import Path
 import random
@@ -14,7 +28,7 @@ from mybot.common.help_registry import HelpItem
 from mybot.common.json_store import load_json, mutate_json
 from mybot.common.logger import get_plugin_logger
 from mybot.common.user_utils import get_nickname
-from mybot.plugins.points import get_points, refund_points, spend_points
+from mybot.common.accounting import get_points, refund_points, spend_points
 
 
 HELP_ITEMS = (

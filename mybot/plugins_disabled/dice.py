@@ -1,22 +1,48 @@
-import random
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="legacy_dice",
+    name="点数方块",
+    default_enabled=False,
+    scope="group",
+    permission_level=4,
+    data_files=("data/paid_rounds.json", "data/points.json"),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import asyncio
-from nonebot import on_command, get_bot
-from nonebot.adapters.onebot.v11 import MessageEvent, Bot, GroupMessageEvent
+import random
+import re
+import time
+from typing import Any
+
+from nonebot import get_bots, on_command
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageEvent, MessageSegment
 from nonebot.params import CommandArg
-from nonebot.adapters.onebot.v11 import Message
 from nonebot.rule import Rule
 from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.help_registry import HelpItem
-from mybot.plugins.points import get_points, spend_points, add_points
+from mybot.common.accounting import ASSET_POINTS, get_points
+from mybot.common.paid_rounds import (
+    PaidRoundService,
+    new_round_id,
+    register_recovery_adapter,
+)
 from mybot.plugins.rate_limit import check_game_limit, get_limit_message
 from mybot.common.logger import get_plugin_logger
 
 
 logger = get_plugin_logger(__name__)
 FEATURE_KEY = "legacy_dice"
+GAME_TYPE = "dice"
 MAX_BET = 100
 BIG_SMALL_PAYOUT = 1.95
 TRIPLE_PAYOUT = 34
+QQ_DICE_COUNT = 3
+QQ_DICE_FETCH_ATTEMPTS = 3
+QQ_DICE_FETCH_DELAY_SECONDS = 0.2
 HELP_ITEMS = (
     HelpItem("小游戏", "/点数方块 - 点数方块", 30),
 )
@@ -41,6 +67,205 @@ FEATURE_RULE = Rule(_feature_enabled)
 
 # 存储进行中的点数方块 {group_id: {"bets": {user_id: {"type": str, "amount": int}}, "starter": str}}
 active_games = {}
+settlement_locks: dict[str, asyncio.Lock] = {}
+
+
+class QQDiceResultError(RuntimeError):
+    """Raised when a native QQ dice result cannot be recovered safely."""
+
+
+def _round_service() -> PaidRoundService:
+    return PaidRoundService()
+
+
+def _hydrate_round(round_record: dict) -> dict:
+    game = round_record["payload"]
+    game["round_id"] = round_record["round_id"]
+    bets = game.setdefault("bets", {})
+    for participant in round_record.get("participants", {}).values():
+        if participant.get("state") not in {"active", "settled"}:
+            continue
+        metadata = participant.get("metadata", {})
+        if metadata.get("role") != "bet":
+            continue
+        bets.setdefault(
+            participant["user_id"],
+            {
+                "type": metadata["type"],
+                "amount": participant["amount"],
+                "nickname": metadata["nickname"],
+            },
+        )
+    return game
+
+
+def _restore_round(round_record: dict, service: PaidRoundService) -> None:
+    active_games[round_record["group_id"]] = _hydrate_round(round_record)
+
+
+def _round_is_loaded(round_record: dict) -> bool:
+    return active_games.get(round_record["group_id"], {}).get("round_id") == round_record["round_id"]
+
+
+def _discard_round(round_record: dict, service: PaidRoundService) -> None:
+    if _round_is_loaded(round_record):
+        active_games.pop(round_record["group_id"], None)
+
+
+def _connected_bot() -> Bot | None:
+    return next(iter(get_bots().values()), None)
+
+
+def _extract_message_id(response: Any) -> str | None:
+    if not isinstance(response, dict):
+        return None
+    message_id = response.get("message_id")
+    if message_id is None and isinstance(response.get("data"), dict):
+        message_id = response["data"].get("message_id")
+    if message_id is None or not str(message_id).strip():
+        return None
+    return str(message_id).strip()
+
+
+def _normalize_dice_result(value: Any) -> int | None:
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return None
+    return result if 1 <= result <= 6 else None
+
+
+def _extract_dice_result(value: Any) -> int | None:
+    if isinstance(value, MessageSegment):
+        if value.type == "dice":
+            return _normalize_dice_result(value.data.get("result"))
+        return None
+
+    if isinstance(value, Message):
+        for segment in value:
+            result = _extract_dice_result(segment)
+            if result is not None:
+                return result
+        return None
+
+    if isinstance(value, dict):
+        if value.get("type") == "dice" and isinstance(value.get("data"), dict):
+            return _normalize_dice_result(value["data"].get("result"))
+        for key in ("message", "raw_message"):
+            if key in value:
+                result = _extract_dice_result(value[key])
+                if result is not None:
+                    return result
+        return None
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            result = _extract_dice_result(item)
+            if result is not None:
+                return result
+        return None
+
+    if isinstance(value, str):
+        match = re.search(r"\[CQ:dice(?:,[^\]]*?)?result=([1-6])(?:,[^\]]*)?\]", value)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+async def _read_qq_dice_result(bot: Bot, message_id: str) -> int:
+    last_error: Exception | None = None
+    for attempt in range(QQ_DICE_FETCH_ATTEMPTS):
+        try:
+            message = await bot.get_msg(message_id=message_id)
+            result = _extract_dice_result(message)
+            if result is not None:
+                return result
+        except Exception as exc:
+            last_error = exc
+
+        if attempt + 1 < QQ_DICE_FETCH_ATTEMPTS:
+            await asyncio.sleep(QQ_DICE_FETCH_DELAY_SECONDS)
+
+    error = QQDiceResultError(f"无法读取 QQ 骰子结果 message_id={message_id}")
+    if last_error is not None:
+        raise error from last_error
+    raise error
+
+
+async def _collect_qq_dice_results(
+    bot: Bot,
+    group_id: str,
+    game: dict,
+    service: PaidRoundService,
+) -> list[int]:
+    rolls = game.setdefault("qq_dice_rolls", [])
+    if not isinstance(rolls, list) or len(rolls) > QQ_DICE_COUNT:
+        raise QQDiceResultError("付费回合中的 QQ 骰子记录无效")
+
+    for index in range(QQ_DICE_COUNT):
+        if index >= len(rolls):
+            try:
+                response = await bot.send_group_msg(
+                    group_id=int(group_id),
+                    message=MessageSegment.dice(),
+                )
+            except Exception as exc:
+                raise QQDiceResultError(f"第 {index + 1} 枚 QQ 骰子发送失败") from exc
+
+            message_id = _extract_message_id(response)
+            if message_id is None:
+                raise QQDiceResultError(f"第 {index + 1} 枚 QQ 骰子未返回消息 ID")
+            rolls.append({"message_id": message_id})
+            service.update_payload(game["round_id"], game)
+
+        roll = rolls[index]
+        if not isinstance(roll, dict) or not str(roll.get("message_id", "")).strip():
+            raise QQDiceResultError(f"第 {index + 1} 枚 QQ 骰子记录无效")
+
+        result = _normalize_dice_result(roll.get("result"))
+        if result is None:
+            result = await _read_qq_dice_result(bot, str(roll["message_id"]))
+            roll["result"] = result
+            service.update_payload(game["round_id"], game)
+
+    return [int(roll["result"]) for roll in rolls]
+
+
+async def _notify_qq_dice_pending(
+    bot: Bot,
+    group_id: str,
+    game: dict,
+    service: PaidRoundService,
+) -> None:
+    if game.get("qq_dice_pending_notified"):
+        return
+    try:
+        await bot.send_group_msg(
+            group_id=int(group_id),
+            message=(
+                "（按住酒壶）骰影一时看不真切，本猫先封住此局，"
+                "稍后仍按方才的原骰判定，不会重复扣分。"
+            ),
+        )
+        game["qq_dice_pending_notified"] = True
+        service.update_payload(game["round_id"], game)
+    except Exception as exc:
+        logger.exception(f"发送 QQ 骰子待确认提示失败 group_id={group_id}: {exc}")
+
+
+async def _settle_due_round(round_record: dict, service: PaidRoundService) -> None:
+    if not _round_is_loaded(round_record):
+        _restore_round(round_record, service)
+    await settle_game(_connected_bot(), round_record["group_id"])
+
+
+register_recovery_adapter(
+    GAME_TYPE,
+    restore=_restore_round,
+    is_loaded=_round_is_loaded,
+    discard=_discard_round,
+    on_due=_settle_due_round,
+)
 
 # 开场文案
 START_MESSAGES = [
@@ -129,8 +354,22 @@ async def handle_start_dice(bot: Bot, event: MessageEvent):
     # 创建点数方块
     active_games[group_id] = {
         "bets": {},
-        "starter": nickname
+        "starter": nickname,
     }
+    service = _round_service()
+    round_id = new_round_id(GAME_TYPE)
+    active_games[group_id]["round_id"] = round_id
+    service.create_round(
+        round_id=round_id,
+        game_type=GAME_TYPE,
+        mode="timed",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_POINTS,
+        feature_key=FEATURE_KEY,
+        payload=active_games[group_id],
+        deadline_at=time.time() + 30,
+    )
     
     start_msg = random.choice(START_MESSAGES)
     
@@ -234,9 +473,6 @@ async def place_bet(bot: Bot, event: MessageEvent, bet_type: str, args: Message)
         await bot.send(event, msg)
         return
     
-    # 扣除积分
-    spend_points(user_id, group_id, amount)
-    
     # 获取昵称
     try:
         user_info = await bot.get_stranger_info(user_id=int(user_id))
@@ -245,12 +481,25 @@ async def place_bet(bot: Bot, event: MessageEvent, bet_type: str, args: Message)
         logger.warning(f"点数方块参与获取昵称失败 user_id={user_id}: {exc}")
         nickname = user_id
     
-    # 记录参与
-    game["bets"][user_id] = {
+    bet_record = {
         "type": bet_type,
         "amount": amount,
         "nickname": nickname
     }
+    service = _round_service()
+    service.add_participant(
+        game["round_id"],
+        participant_id=user_id,
+        user_id=user_id,
+        amount=amount,
+        metadata={"role": "bet", "type": bet_type, "nickname": nickname},
+    )
+    charge = service.freeze_participant(game["round_id"], user_id)
+    if not charge["ok"]:
+        await bot.send(event, random.choice(NO_POINTS_MESSAGES).format(points=charge["balance"]))
+        return
+    game["bets"][user_id] = bet_record
+    service.update_payload(game["round_id"], game)
     
     success_msg = random.choice(BET_SUCCESS).format(nickname=nickname, bet_type=bet_type)
     await bot.send(event, f"✅ {nickname} 选【{bet_type}】{amount}积分！\n{success_msg}")
@@ -270,7 +519,13 @@ async def handle_settle(bot: Bot, event: MessageEvent):
     
     await settle_game(bot, group_id)
 
-async def settle_game(bot: Bot, group_id: str):
+async def settle_game(bot: Bot | None, group_id: str):
+    lock = settlement_locks.setdefault(group_id, asyncio.Lock())
+    async with lock:
+        await _settle_game_locked(bot, group_id)
+
+
+async def _settle_game_locked(bot: Bot | None, group_id: str):
     """结算点数方块"""
     if group_id not in active_games:
         return
@@ -280,18 +535,28 @@ async def settle_game(bot: Bot, group_id: str):
     
     # 没人参与
     if not bets:
-        del active_games[group_id]
+        _round_service().expire_round(game["round_id"], reason="no_participants")
+        active_games.pop(group_id, None)
         try:
             msg = random.choice(NO_BET_MESSAGES)
-            await bot.send_group_msg(group_id=int(group_id), message=f"🎲 点数方块结束 🎲\n{'='*20}\n{msg}")
+            if bot is not None:
+                await bot.send_group_msg(group_id=int(group_id), message=f"🎲 点数方块结束 🎲\n{'='*20}\n{msg}")
         except Exception as exc:
             logger.exception(f"发送无人参与点数方块结束消息失败 group_id={group_id}: {exc}")
         return
     
-    # 掷点数方块
-    dice1 = random.randint(1, 6)
-    dice2 = random.randint(1, 6)
-    dice3 = random.randint(1, 6)
+    if bot is None:
+        logger.warning(f"QQ 骰子结算等待 OneBot 连接 group_id={group_id}")
+        return
+
+    service = _round_service()
+    try:
+        dice1, dice2, dice3 = await _collect_qq_dice_results(bot, group_id, game, service)
+    except Exception as exc:
+        logger.exception(f"QQ 骰子结果尚未确认 group_id={group_id}: {exc}")
+        await _notify_qq_dice_pending(bot, group_id, game, service)
+        return
+
     total = dice1 + dice2 + dice3
     
     # 判断结果
@@ -301,6 +566,7 @@ async def settle_game(bot: Bot, group_id: str):
     # 结算
     winners = []
     losers = []
+    payouts = {}
     
     for user_id, bet_info in bets.items():
         bet_type = bet_info["type"]
@@ -312,7 +578,7 @@ async def settle_game(bot: Bot, group_id: str):
             # 三同全场结算，只有选三同的得分
             if bet_type == "三同":
                 win_amount = int(amount * TRIPLE_PAYOUT)
-                add_points(user_id, group_id, win_amount)
+                payouts[user_id] = win_amount
                 winners.append(f"🎉 {nickname}：+{win_amount - amount}（选{bet_type} {amount}）")
             else:
                 losers.append(f"💀 {nickname}：-{amount}（选{bet_type}）")
@@ -322,13 +588,23 @@ async def settle_game(bot: Bot, group_id: str):
                 losers.append(f"💀 {nickname}：-{amount}（选{bet_type}）")
             elif bet_type == result:
                 win_amount = int(amount * BIG_SMALL_PAYOUT)
-                add_points(user_id, group_id, win_amount)
+                payouts[user_id] = win_amount
                 winners.append(f"🎉 {nickname}：+{win_amount - amount}（选{bet_type} {amount}）")
             else:
                 losers.append(f"💀 {nickname}：-{amount}（选{bet_type}）")
     
-    # 删除点数方块
-    del active_games[group_id]
+    service.prepare_settlement(
+        game["round_id"],
+        result={
+            "dice": [dice1, dice2, dice3],
+            "total": total,
+            "result": result,
+            "is_triple": is_triple,
+        },
+        payouts=payouts,
+    )
+    service.settle_round(game["round_id"])
+    active_games.pop(group_id, None)
     
     # 生成结果消息
     dice_display = f"🎲 {dice1} | 🎲 {dice2} | 🎲 {dice3}"
@@ -373,7 +649,8 @@ async def settle_game(bot: Bot, group_id: str):
 输入 /点数方块 再来一局！"""
     
     try:
-        await bot.send_group_msg(group_id=int(group_id), message=msg)
+        if bot is not None:
+            await bot.send_group_msg(group_id=int(group_id), message=msg)
     except Exception as exc:
         logger.exception(f"发送点数方块结算消息失败 group_id={group_id}: {exc}")
 

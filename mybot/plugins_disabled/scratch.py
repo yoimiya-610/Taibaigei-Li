@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="legacy_scratch",
+    name="刮刮挑战",
+    default_enabled=False,
+    scope="group",
+    permission_level=4,
+    data_files=("data/paid_rounds.json", "data/points.json"),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 import time
 
@@ -9,12 +23,18 @@ from nonebot.rule import Rule
 from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.help_registry import HelpItem
 from mybot.common.logger import get_plugin_logger
-from mybot.plugins.points import add_points, get_points, spend_points
+from mybot.common.accounting import ASSET_POINTS, get_points
+from mybot.common.paid_rounds import (
+    PaidRoundService,
+    new_round_id,
+    register_recovery_adapter,
+)
 from mybot.plugins.rate_limit import check_game_limit, get_limit_message
 
 
 logger = get_plugin_logger(__name__)
 FEATURE_KEY = "legacy_scratch"
+GAME_TYPE = "scratch"
 COOLDOWN_TIME = 3
 CARD_COUNT = 9
 PICK_COUNT = 3
@@ -41,6 +61,35 @@ FEATURE_RULE = Rule(_feature_enabled)
 
 active_games: dict[str, dict] = {}
 cooldown: dict[str, float] = {}
+
+
+def _round_service() -> PaidRoundService:
+    return PaidRoundService()
+
+
+def _restore_round(round_record: dict, service: PaidRoundService) -> None:
+    game = round_record["payload"]
+    game["round_id"] = round_record["round_id"]
+    active_games[f"{round_record['group_id']}_{round_record['creator_id']}"] = game
+
+
+def _round_is_loaded(round_record: dict) -> bool:
+    game_key = f"{round_record['group_id']}_{round_record['creator_id']}"
+    return active_games.get(game_key, {}).get("round_id") == round_record["round_id"]
+
+
+def _discard_round(round_record: dict, service: PaidRoundService) -> None:
+    game_key = f"{round_record['group_id']}_{round_record['creator_id']}"
+    if active_games.get(game_key, {}).get("round_id") == round_record["round_id"]:
+        active_games.pop(game_key, None)
+
+
+register_recovery_adapter(
+    GAME_TYPE,
+    restore=_restore_round,
+    is_loaded=_round_is_loaded,
+    discard=_discard_round,
+)
 
 SYMBOL_DISPLAY = {
     "空牌": "□",
@@ -234,9 +283,7 @@ async def handle_scratch(bot: Bot, event: MessageEvent, args: Message = CommandA
     if points_info["current"] < bet:
         await scratch.finish(random.choice(NO_POINTS_MESSAGES).format(points=points_info["current"]))
 
-    spend_points(user_id, group_id, bet)
-    cooldown[game_key] = now
-    active_games[game_key] = {
+    game = {
         "deck": _new_deck(level),
         "bet": bet,
         "level": level,
@@ -244,6 +291,26 @@ async def handle_scratch(bot: Bot, event: MessageEvent, args: Message = CommandA
         "group_id": group_id,
         "user_id": user_id,
     }
+    service = _round_service()
+    round_id = new_round_id(GAME_TYPE)
+    game["round_id"] = round_id
+    service.create_round(
+        round_id=round_id,
+        game_type=GAME_TYPE,
+        mode="personal",
+        group_id=group_id,
+        creator_id=user_id,
+        asset_type=ASSET_POINTS,
+        feature_key=FEATURE_KEY,
+        payload=game,
+        participants=[{"user_id": user_id, "amount": bet}],
+    )
+    charge = service.freeze_participant(round_id, user_id)
+    if not charge["ok"]:
+        service.refund_round(round_id, reason="insufficient_balance")
+        await scratch.finish(random.choice(NO_POINTS_MESSAGES).format(points=charge["balance"]))
+    cooldown[game_key] = now
+    active_games[game_key] = game
 
     await scratch.finish(
         f"🎴 李太白给·刮刮挑战 🎴\n"
@@ -276,12 +343,23 @@ async def handle_reveal(event: MessageEvent, args: Message = CommandArg()):
     if not positions:
         await reveal.finish("（敲敲牌背）要选三张不同的牌，格式：/刮开 1 5 9")
 
-    game = active_games.pop(game_key)
+    game = active_games[game_key]
     selected_indexes = {position - 1 for position in positions}
     selected_cards = [game["deck"][position - 1] for position in positions]
     reward, reason = calculate_reward(selected_cards, game["level"])
-    if reward > 0:
-        add_points(game["user_id"], game["group_id"], reward)
+    service = _round_service()
+    service.prepare_settlement(
+        game["round_id"],
+        result={
+            "reason": "revealed",
+            "positions": positions,
+            "selected_cards": selected_cards,
+            "reward": reward,
+        },
+        payouts={game["user_id"]: reward},
+    )
+    service.settle_round(game["round_id"])
+    active_games.pop(game_key, None)
 
     profit = reward - game["bet"]
     profit_text = f"+{profit}" if profit > 0 else str(profit)
@@ -326,10 +404,16 @@ async def handle_give_up(event: MessageEvent):
     if game_key not in active_games:
         await give_up.finish("（摊手）眼下没有可放弃的刮刮挑战。")
 
-    game = active_games.pop(game_key)
+    game = active_games[game_key]
     refund = game["bet"] // 2
-    if refund > 0:
-        add_points(game["user_id"], game["group_id"], refund)
+    service = _round_service()
+    service.prepare_settlement(
+        game["round_id"],
+        result={"reason": "give_up", "refund": refund},
+        payouts={game["user_id"]: refund},
+    )
+    service.settle_round(game["round_id"])
+    active_games.pop(game_key, None)
 
     new_points = get_points(game["user_id"], game["group_id"])
     await give_up.finish(

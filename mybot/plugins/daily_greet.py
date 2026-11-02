@@ -1,3 +1,16 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="daily_greet",
+    name="每日问候",
+    default_enabled=True,
+    scope="group",
+    permission_level=3,
+    privacy_level="internal",
+    backup_policy="none",
+)
+
 import random
 from datetime import date
 

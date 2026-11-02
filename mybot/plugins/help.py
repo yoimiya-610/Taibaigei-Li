@@ -1,25 +1,64 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="help",
+    name="帮助菜单",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    privacy_level="public",
+    backup_policy="none",
+)
+
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent, Bot
 
-from mybot.common.feature_flags import collect_features, get_legacy_rotation_day_name
-from mybot.common.help_registry import CATEGORY_META, HelpItem, render_category_help, render_help_menu
+from mybot.common.feature_flags import collect_features
+from mybot.common.help_registry import (
+    CATEGORY_META,
+    HelpItem,
+    collect_public_command_names,
+    render_category_help,
+    render_help_menu,
+)
 from mybot.common.legacy_games import LEGACY_GAMES, LEGACY_GAME_ORDER
 from mybot.common.version import __version__
 
 
 HELP_ITEMS = (
+    HelpItem("趣味功能", "/游戏 - 查看历史小游戏玩法与开关", 5),
     HelpItem("签到积分", "/积分说明 - 查看积分规则", 40),
+    HelpItem("系统说明", "/命令全览 - 查看全部命令", 5),
     HelpItem("系统说明", "/关于 - 本猫介绍", 10),
 )
 COMMAND_ALIASES = (
     "help", "帮助", "菜单", "功能", "命令", "功能菜单", "命令列表", "指令",
+    "命令全览",
     "游戏", "游戏列表", "小游戏", "游戏大厅", "游戏大全",
     "关于", "about", "介绍",
     "积分说明", "积分帮助", "怎么赚积分", "积分规则", "怎么得积分",
     "诗词文艺", "情感互动", "趣味功能", "签到积分", "社交互动", "太白酒馆", "AI对话", "系统说明",
+    "群管理介绍",
 )
 
 LEGACY_GAME_KEYS = LEGACY_GAME_ORDER
+
+
+def _render_command_overview(
+    group_id: str | int | None = None,
+    user_id: str | int | None = None,
+) -> str:
+    commands = collect_public_command_names(group_id, user_id)
+    lines = [
+        "🧭 李太白给·命令全览 🧭",
+        "=" * 22,
+        "（摊开百门路引）群友可用的明面招式，尽在此卷。",
+        "=" * 22,
+    ]
+    lines.append("｜".join(commands))
+    lines.append("『百般门径皆成句，一卷翻开任君游。』")
+    return "\n".join(lines)
 
 
 def _event_group_id(event: MessageEvent) -> str | None:
@@ -39,7 +78,7 @@ def _render_game_list(group_id: str | None = None) -> str:
     lines = [
         "🎮 李太白给·游戏大厅 🎮",
         "======================",
-        f"（铺开旧局）今日是{get_legacy_rotation_day_name()}，玩法与指令都记在这里：",
+        "（铺开旧局）六种玩法与指令都记在这里，默认收起：",
         "======================",
     ]
     for game in LEGACY_GAMES:
@@ -67,7 +106,9 @@ help_cmd = on_command("help", aliases={"帮助", "菜单", "功能", "功能菜�
 
 @help_cmd.handle()
 async def handle_help(bot: Bot, event: MessageEvent):
-    await help_cmd.finish(render_help_menu(_event_group_id(event)))
+    await help_cmd.finish(
+        render_help_menu(_event_group_id(event), event.get_user_id())
+    )
 
 # 游戏列表
 game_list = on_command("游戏", aliases={"游戏列表", "小游戏", "游戏大厅", "游戏大全"}, priority=5, block=True)
@@ -82,7 +123,11 @@ def _register_category_command(category: str):
 
     @matcher.handle()
     async def handle_category_menu(bot: Bot, event: MessageEvent):
-        text = render_category_help(category, _event_group_id(event))
+        text = render_category_help(
+            category,
+            _event_group_id(event),
+            event.get_user_id(),
+        )
         if not text:
             await matcher.finish(
                 "（翻了翻空页）这卷眼下还没写内容。\n"
@@ -92,8 +137,18 @@ def _register_category_command(category: str):
 
 
 for _category in CATEGORY_META:
-    if _category not in {"小游戏", "太白酒馆"}:
+    if _category != "太白酒馆":
         _register_category_command(_category)
+
+
+command_overview = on_command("命令全览", priority=5, block=True)
+
+
+@command_overview.handle()
+async def handle_command_overview(event: MessageEvent):
+    await command_overview.finish(
+        _render_command_overview(_event_group_id(event), event.get_user_id())
+    )
 
 # 关于
 about = on_command("关于", aliases={"about", "介绍"}, priority=5, block=True)

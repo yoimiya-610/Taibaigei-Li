@@ -1,0 +1,24 @@
+[Unit]
+Description=Taibaigei Li OneBot V11 bot
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+# Replace the account and checkout path before installing this unit.
+User=taibaigei
+Group=taibaigei
+WorkingDirectory=/opt/taibaigei
+ExecStart=/opt/taibaigei/mybot/.venv/bin/li-taibaigei
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+Restart=on-failure
+RestartPreventExitStatus=78
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

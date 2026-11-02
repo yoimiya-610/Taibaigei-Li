@@ -1,3 +1,17 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="yoimiya",
+    name="米亚介绍",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    privacy_level="public",
+    backup_policy="none",
+    legacy_feature_keys=("youyimiya",),
+)
+
 import random
 from nonebot import on_message
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageEvent
@@ -37,7 +51,7 @@ INTRO_MESSAGES = [
     (
         "你说的对，但是《李太白给》是由悠依米亚自主研发的一款全新开放世界吟诗系统。"
         "故事发生在一个被称作「赛博酒馆」的幻想世界，在这里，被诗仙选中的人将被授予「墨镜」，导引装逼之力。"
-        "你将扮演一位名为「酒友」的神秘角色，在自由的对话中邂逅诗词歌赋、花花公子的本猫，"
+        "你将扮演一位名为「酒友」的神秘角色，在自由的对话中邂逅诗词歌赋、提酒壶的本猫，"
         "和本猫一起击败寂寞，找回失散的文采——同时，逐步发掘「积分」的真相。"
     ),
     (

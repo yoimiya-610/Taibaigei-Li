@@ -1,10 +1,24 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="poetry_game",
+    name="飞花令",
+    default_enabled=True,
+    scope="group",
+    permission_level=2,
+    data_files=("data/points.json",),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 import random
 import asyncio
 import time
 from nonebot import on_command, on_message, get_bot
 from nonebot.adapters.onebot.v11 import MessageEvent, Bot, GroupMessageEvent
 from nonebot.rule import Rule
-from mybot.plugins.points import add_points
+from mybot.common.accounting import add_points
 from mybot.common.ai_client import is_configured, prompt_completion
 from mybot.common.feature_flags import is_feature_enabled
 from mybot.common.help_registry import HelpItem

@@ -1,3 +1,21 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="monthly_fame",
+    name="月度风云榜",
+    default_enabled=True,
+    scope="group",
+    permission_level=3,
+    data_files=(
+        "data/gift_inventory.json",
+        "data/monthly_fame.json",
+        "data/titles.json",
+    ),
+    privacy_level="personal",
+    backup_policy="standard",
+)
+
 from nonebot import get_bot, require
 from nonebot.adapters.onebot.v11 import Bot
 

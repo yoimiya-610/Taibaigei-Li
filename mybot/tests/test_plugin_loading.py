@@ -7,13 +7,23 @@ class PluginLoadingTest(unittest.TestCase):
     def test_plugins_load_once_under_package_names(self):
         import nonebot
         import mybot.bot  # noqa: F401
+        from mybot.common.legacy_games import LEGACY_GAMES
 
         module_names = {plugin.module_name for plugin in nonebot.get_loaded_plugins()}
 
         self.assertIn("mybot.plugins.points", module_names)
         self.assertIn("mybot.plugins.fortune", module_names)
-        self.assertIn("mybot.plugins.onebot_diagnostics", module_names)
-        self.assertIn("mybot.plugins_disabled.slot", module_names)
+        self.assertTrue(
+            module_names.isdisjoint(
+                {
+                    "mybot.plugins._fortune",
+                    "mybot.plugins._gift",
+                    "mybot.plugins._taibai_tavern",
+                }
+            )
+        )
+        for game in LEGACY_GAMES:
+            self.assertIn(f"mybot.plugins_disabled.{game.module_name}", module_names)
         self.assertFalse(
             any(
                 module_name.startswith(("plugins.", "plugins_disabled."))

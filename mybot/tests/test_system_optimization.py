@@ -56,6 +56,20 @@ class SystemOptimizationTest(unittest.TestCase):
         self.assertIsNone(admin_console._parse_positive_amount("-5"))
         self.assertIsNone(admin_console._parse_positive_amount("没有数字"))
 
+    def test_debug_amount_parser_accepts_optional_group_id(self):
+        self.assertEqual(
+            admin_console._parse_debug_amount_and_group("给 45 分"),
+            (45, None),
+        )
+        self.assertEqual(
+            admin_console._parse_debug_amount_and_group("45 30001"),
+            (45, "30001"),
+        )
+        self.assertIsNone(admin_console._parse_debug_amount_and_group("45 0"))
+        self.assertIsNone(
+            admin_console._parse_debug_amount_and_group("45 30001 40001")
+        )
+
     def test_debug_legacy_games_toggle_sets_all_overrides(self):
         with TemporaryDirectory() as tmp_dir:
             overrides_path = Path(tmp_dir) / "legacy_game_overrides.json"
@@ -70,6 +84,38 @@ class SystemOptimizationTest(unittest.TestCase):
                     self.assertFalse(enabled)
                     for feature in feature_flags.LEGACY_GAME_ORDER:
                         self.assertFalse(feature_flags.get_legacy_game_override(feature))
+
+    def test_debug_legacy_games_can_toggle_one_group_only(self):
+        with TemporaryDirectory() as tmp_dir:
+            overrides_path = Path(tmp_dir) / "legacy_game_overrides.json"
+            with patch.object(
+                feature_flags,
+                "LEGACY_GAME_OVERRIDES_FILE",
+                overrides_path,
+            ):
+                with patch.object(
+                    feature_flags,
+                    "_coerce_day",
+                    return_value=date(2026, 7, 16),
+                ):
+                    enabled, _names = admin_console._toggle_all_legacy_games("100")
+                    self.assertTrue(enabled)
+                    for feature in feature_flags.LEGACY_GAME_ORDER:
+                        self.assertTrue(
+                            feature_flags.get_legacy_game_override(
+                                feature,
+                                group_id="100",
+                            )
+                        )
+                        self.assertIsNone(
+                            feature_flags.get_legacy_game_override(
+                                feature,
+                                group_id="200",
+                            )
+                        )
+                        self.assertIsNone(
+                            feature_flags.get_legacy_game_override(feature)
+                        )
 
 
 if __name__ == "__main__":

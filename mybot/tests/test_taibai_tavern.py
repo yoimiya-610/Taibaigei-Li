@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 import mybot.bot  # noqa: F401
+from mybot.common import accounting
 from mybot.common.help_registry import CATEGORY_META
 from mybot.plugins import points
 from mybot.plugins import taibai_tavern
@@ -14,13 +15,16 @@ class TaibaiTavernTest(unittest.TestCase):
     def setUp(self):
         self.tmp_dir = TemporaryDirectory()
         self.old_points_file = points.POINTS_FILE
+        self.old_accounting_points_file = accounting.POINTS_FILE
         self.old_tavern_file = taibai_tavern.DATA_FILE
         base = Path(self.tmp_dir.name)
         points.POINTS_FILE = base / "points.json"
+        accounting.POINTS_FILE = points.POINTS_FILE
         taibai_tavern.DATA_FILE = base / "taibai_tavern.json"
 
     def tearDown(self):
         points.POINTS_FILE = self.old_points_file
+        accounting.POINTS_FILE = self.old_accounting_points_file
         taibai_tavern.DATA_FILE = self.old_tavern_file
         self.tmp_dir.cleanup()
 
@@ -63,6 +67,7 @@ class TaibaiTavernTest(unittest.TestCase):
         self.assertIn("太白酒馆", CATEGORY_META)
         self.assertEqual(taibai_tavern.HELP_ITEMS[0].category, "太白酒馆")
         self.assertIn("墨宝寻踪", taibai_tavern.COMMAND_ALIASES)
+        self.assertIn("对饮猜拳", taibai_tavern.COMMAND_ALIASES)
 
     def test_tavern_help_owns_wine_exchange_copy(self):
         tavern_help = taibai_tavern._render_tavern_help()
@@ -70,6 +75,7 @@ class TaibaiTavernTest(unittest.TestCase):
         self.assertIn("1 积分，换 10 酒钱", tavern_help)
         self.assertIn("今日翻签，来日添新局", tavern_help)
         self.assertIn("/墨宝寻踪 酒钱数", tavern_help)
+        self.assertIn("/对饮猜拳 @群友 酒钱数", tavern_help)
 
     def test_points_exchange_to_wine_at_one_to_ten(self):
         self.assertEqual(taibai_tavern.points_to_wine(1), 10)

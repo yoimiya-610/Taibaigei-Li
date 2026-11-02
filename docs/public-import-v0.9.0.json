@@ -1,0 +1,697 @@
+{
+  "product_version": "0.9.0",
+  "source_version": "0.8.2",
+  "source_commit": "0682f56041ebf73e1e6e2e6150c9b0d1c0367a42",
+  "scope": "Reviewed product files from validated export; hashes describe sanitized inputs before public integration.",
+  "excluded": "Runtime state, deployment configuration, private automation and group-specific acquaintance content.",
+  "files": [
+    {
+      "path": "mybot/.env.example",
+      "sha256": "7695c17806456372f09438318de47edcf5f7670eac9ae22ba749e9bc3249c3c8"
+    },
+    {
+      "path": "mybot/.gitignore",
+      "sha256": "7d73ae66405bf0d4290a0ebfdffff8a9f8f1b2f70c569b583a35936fc01c3182"
+    },
+    {
+      "path": "mybot/.python-version",
+      "sha256": "49a506dd32096b010d75205acf3430c9ae6c40351888129499e5a5e487126c93"
+    },
+    {
+      "path": "mybot/__init__.py",
+      "sha256": "de8363194148b104d115d51268730ccf8fda1ae56ac29be4dd85ff7f8f0e93c0"
+    },
+    {
+      "path": "mybot/bot.py",
+      "sha256": "564af6c742e1d775dab3aad6b4ce7bb05b3eb20e25066b9421cd206dab5b38e8"
+    },
+    {
+      "path": "mybot/common/__init__.py",
+      "sha256": "90fb71cf3d5626b1e161af806c4d2a8189a7c8c9d57526f9c0bf7ca8e012d471"
+    },
+    {
+      "path": "mybot/common/accounting.py",
+      "sha256": "639bfac8628344fc82971679281cc0b46c1ffcbd151f3ac113593d9250756518"
+    },
+    {
+      "path": "mybot/common/admin.py",
+      "sha256": "e79ab54e44ef157b428fffb5bd18a97afbf830287484d01add3c7e9dfd781f32"
+    },
+    {
+      "path": "mybot/common/admin_audit.py",
+      "sha256": "99e15544ba73c60d8654297aeea8403714b98634441b67e2df459855e8477f49"
+    },
+    {
+      "path": "mybot/common/ai_capability_prompt.py",
+      "sha256": "6d62ec6c107937bc3740ec01ccae19798afe33e91e0fd57548245501b94f6c15"
+    },
+    {
+      "path": "mybot/common/ai_client.py",
+      "sha256": "9ab8dfd228c8d89082da9d6ffe06820f7a41064f9654d29172de81a7996856d2"
+    },
+    {
+      "path": "mybot/common/ai_context.py",
+      "sha256": "bbd82265a1e5c26000c4cc3f3c45774391e3dbaffbe49e7536fde95b0c9da184"
+    },
+    {
+      "path": "mybot/common/ai_context_registry.py",
+      "sha256": "543619bfa8a84b66731a7593414d9d2082c76a9bce53dcf3054b4dfee7fb0ea7"
+    },
+    {
+      "path": "mybot/common/ai_public_play_guides.py",
+      "sha256": "3a4955b77a6b16492932fa81f688b2ed68da13d455bb2fb233f4c60ee1264829"
+    },
+    {
+      "path": "mybot/common/ai_readonly_tools.py",
+      "sha256": "9e239ace71b783060c4b143be9642a54de181e947824165cddfb1d7f5d06fdb6"
+    },
+    {
+      "path": "mybot/common/backup.py",
+      "sha256": "f45e46394e74823765ff31b2e0babdfa896c54719f665740071d11a73c4492a1"
+    },
+    {
+      "path": "mybot/common/charm.py",
+      "sha256": "dfdd75797da5f408468ca40c9dc8954e2971617bdf95892ce81dd55858aa6d3a"
+    },
+    {
+      "path": "mybot/common/command_discovery.py",
+      "sha256": "43cf96c3fa63be9010b62f23471e856f9c58ad23a2e1ed0596e9836f9efb5ae6"
+    },
+    {
+      "path": "mybot/common/command_registry.py",
+      "sha256": "4747d6c47a90ea5287036267e0a55bdbae5df9cf1f1a3528254b7b1c1cf8d014"
+    },
+    {
+      "path": "mybot/common/config.py",
+      "sha256": "af773664cae5efd9a2f9a41fd2433ed38995112f01f2f58957b7ffd4a6879623"
+    },
+    {
+      "path": "mybot/common/data_health.py",
+      "sha256": "a053c5d1f899f4ad33fd6cc2860966bbc10eba86792f16994eb8b829cd598115"
+    },
+    {
+      "path": "mybot/common/feature_flags.py",
+      "sha256": "4a0f347583b981cbf980d72a3720d1f95dae99864c5f771b8601d060ef0eb553"
+    },
+    {
+      "path": "mybot/common/festival_calendar.py",
+      "sha256": "925ad9447e1f22c1597247b167a22e84826bc94537210935bcd994781b876534"
+    },
+    {
+      "path": "mybot/common/festival_greetings.py",
+      "sha256": "f02868aa4771ab83f34afa1839662f00554319337b14cf738688dae368d95f89"
+    },
+    {
+      "path": "mybot/common/gift_store.py",
+      "sha256": "c8fdf8fa972851c6117866071e93e48f101963edf88ec93ab75c0e42be549afa"
+    },
+    {
+      "path": "mybot/common/group_chat_logs.py",
+      "sha256": "1693e20bd49de1853bac1ff6116eb811f8dbf813696bc95ea4ce1bfa3687ea8b"
+    },
+    {
+      "path": "mybot/common/group_management.py",
+      "sha256": "1e3482f5146870d1b72ff94df04b179057e82204fbcf541df919ac95c886fd36"
+    },
+    {
+      "path": "mybot/common/group_platform.py",
+      "sha256": "1f1400bdd132f705de4522c6fb9f8e55228209c78a1930100b25de7f7d7dbd7a"
+    },
+    {
+      "path": "mybot/common/help_registry.py",
+      "sha256": "3e941d6b89c6aa56bbcbe92cb2b295ad2316bea970dc3a737045f07c047a79c3"
+    },
+    {
+      "path": "mybot/common/image_library.py",
+      "sha256": "c0589b18847d23cfd48482529c982afeec8330b197588b5acb1cb9d8bfad13c5"
+    },
+    {
+      "path": "mybot/common/interaction_stats.py",
+      "sha256": "ef2dd5e6dcab651184c9bc2434a0e873d6e4b02f1b64bd18f44e22878be7a778"
+    },
+    {
+      "path": "mybot/common/json_store.py",
+      "sha256": "ba84cf18838fa12c316f36ca94fc3773fe541dc9b27bbd3a0a571dca5baa1460"
+    },
+    {
+      "path": "mybot/common/legacy_games.py",
+      "sha256": "d925e09c564588e070fafb11a48b88d20f995fd4d97e27416d03024d080e8645"
+    },
+    {
+      "path": "mybot/common/logger.py",
+      "sha256": "8c40f200b82f90451640896ab08789e95fc2ff172f6678319d32d22d288e137e"
+    },
+    {
+      "path": "mybot/common/message_utils.py",
+      "sha256": "1c65f3221915ab64319339d61d81719d0f1ce73e4e6f1db4266d59e9f3bbe608"
+    },
+    {
+      "path": "mybot/common/monthly_fame.py",
+      "sha256": "56c3cf05214f6e4741629e9766257b831f7f6d9304683c02f43812b26824a77b"
+    },
+    {
+      "path": "mybot/common/observability.py",
+      "sha256": "bb7f3a7eabdce1243ecb58eaafe56208177bf6c4d6328894724f4fa33fe9339d"
+    },
+    {
+      "path": "mybot/common/onebot_capabilities.py",
+      "sha256": "bb3ef03377568dd74dc7e0aa21be7a96abb1149aad9e5faadbc64e9d02fe32c7"
+    },
+    {
+      "path": "mybot/common/paid_rounds.py",
+      "sha256": "97463afcf7bd8977f15ba5094f9b195ca74e81f0b52b4eef765bee709d94a0ea"
+    },
+    {
+      "path": "mybot/common/persona.py",
+      "sha256": "17d62278b8f48c8309c063a2b41ee45ac11386cfd52b9f07d59c80cef66207d7"
+    },
+    {
+      "path": "mybot/common/personal_scroll.py",
+      "sha256": "f6d847fc7df391af6690ec4556735d64698e145f29955836311a9cc79bb67b54"
+    },
+    {
+      "path": "mybot/common/plugin_metadata.py",
+      "sha256": "921f6f1fdadfc8d44a407138c08cca0fc53a4175987630c42837a689224d50e0"
+    },
+    {
+      "path": "mybot/common/poetry_society.py",
+      "sha256": "073117153e7ee780c0a734335fc1bab03223fb3ceb4f28f0f978a78f83d83567"
+    },
+    {
+      "path": "mybot/common/practical_tools.py",
+      "sha256": "40e351cef71253d81d0e3b39a71173b8ee9b973a9d02cb21430d90bc600a83e3"
+    },
+    {
+      "path": "mybot/common/public_contributions.py",
+      "sha256": "75519139184f322c50e6d0858ec76defd51931d7962239fe814a115767d96688"
+    },
+    {
+      "path": "mybot/common/retention.py",
+      "sha256": "2c648f43e45f7fe23cd8dc71808e9ab988adfb96e7e5080b647174b933a27c53"
+    },
+    {
+      "path": "mybot/common/runtime_state.py",
+      "sha256": "7ffa172f9ea47a37e45f883320711766f6b29760a1808198520fa004caadf997"
+    },
+    {
+      "path": "mybot/common/startup_preflight.py",
+      "sha256": "8b9015e1ad1b43a8ed7e9b16710be0d92c83523ab975aea90e8683ebd55ba49e"
+    },
+    {
+      "path": "mybot/common/streak.py",
+      "sha256": "9ea44520da933ea6ce4e97f934ad92f7252fe06fad853cc12daa39fe4d00dcbb"
+    },
+    {
+      "path": "mybot/common/titles.py",
+      "sha256": "a6647de74f01259f52c66a603e9a41c9691da1395b364108ee53de5f7b3dbde7"
+    },
+    {
+      "path": "mybot/common/translation.py",
+      "sha256": "814c3ffda5552d08da319343385d27ee9e206bcb4d137b0a8005f26fbd94df93"
+    },
+    {
+      "path": "mybot/common/usage_policy.py",
+      "sha256": "2b44c821c852d3fc19742753a315208403010a47436b2be5cecdf85f625a516d"
+    },
+    {
+      "path": "mybot/common/user_utils.py",
+      "sha256": "b1d4518f56d0035fb45aa0573bf039e3a1fba2db4fe054cdc541587141871428"
+    },
+    {
+      "path": "mybot/common/version.py",
+      "sha256": "07b1a23b4adde3d630b4b623bcf83896609910394c4e89ec95029d48899a3099"
+    },
+    {
+      "path": "mybot/main.py",
+      "sha256": "e2752c98ff4546d23e79f207bbd74b4691125dc4e660baa692a247aa99ba4c6e"
+    },
+    {
+      "path": "mybot/plugins/__init__.py",
+      "sha256": "258f37a24426772b7302f9ef6eacb3039a2c6b5e8e2d4bc071b86c4346d8976b"
+    },
+    {
+      "path": "mybot/plugins/_fortune/__init__.py",
+      "sha256": "dc3f1b0e843b14d57740c4ea48a8fc64958e8f6c107b691ec6ce202480e9748c"
+    },
+    {
+      "path": "mybot/plugins/_fortune/advice.py",
+      "sha256": "8b7136141ca26f92d7a0e035417abba3ecdac6c66dcdd315267222eb9551a89c"
+    },
+    {
+      "path": "mybot/plugins/_fortune/copy.py",
+      "sha256": "a5529d8db4475dc5367c094ca22f9a04c6e794e40700540a54ae2d87f28ab34b"
+    },
+    {
+      "path": "mybot/plugins/_fortune/rules.py",
+      "sha256": "0d91ce65ddf2b2dd5757bff01a6d42f0e5ff3f737e60614a82a7afb76b195f27"
+    },
+    {
+      "path": "mybot/plugins/_fortune/storage.py",
+      "sha256": "f1f4e3381475f74238abc8d9c8a440ecf3f2e2958ee433720eb5f313abef58a7"
+    },
+    {
+      "path": "mybot/plugins/_gift/__init__.py",
+      "sha256": "e79919d929d93351be35aa6d246955f083d56e93bf4f3f99766ebd6d1e5cb6f1"
+    },
+    {
+      "path": "mybot/plugins/_gift/copy.py",
+      "sha256": "985e0be478874e61fb2dd5a717fda6b31ec854cab2b8ed82ec98814c21940722"
+    },
+    {
+      "path": "mybot/plugins/_gift/rules.py",
+      "sha256": "42ef8577417fdf00bb1d62e371ccaf7ffb2518bb72a8dd0ad0fc5afbff208516"
+    },
+    {
+      "path": "mybot/plugins/_gift/storage.py",
+      "sha256": "db40df1588684522e1a63f81e43d066d41484d54c7b8b541309fbb699ab17c15"
+    },
+    {
+      "path": "mybot/plugins/_taibai_tavern/__init__.py",
+      "sha256": "bace895d18dafbca3700109f047ee1e4a814e2a2d42888712f13f1cf2a997e7c"
+    },
+    {
+      "path": "mybot/plugins/_taibai_tavern/business.py",
+      "sha256": "b6ad0c8f4bb7368c7dcdc09edf59653c56eb4fb2709b17e3df8c85c4a2423836"
+    },
+    {
+      "path": "mybot/plugins/_taibai_tavern/copy.py",
+      "sha256": "84868adb44dcf8d2533b1159069aa580d5a6ac2acc44153030d4b662bcc64a88"
+    },
+    {
+      "path": "mybot/plugins/_taibai_tavern/rules.py",
+      "sha256": "9f9bb57fd287239a85041a46f91a2e80a9924606aca85ab8aa85b40975b0c4bf"
+    },
+    {
+      "path": "mybot/plugins/_taibai_tavern/storage.py",
+      "sha256": "a058dfd58d7e4929cfde58beb52323609a157942dfcfd2f9e481227d8d2309fc"
+    },
+    {
+      "path": "mybot/plugins/admin_console.py",
+      "sha256": "8636e6d0b92c36d812e3e15c55b4bd8ea23fae3ca77a890e023f0b61f1f695ec"
+    },
+    {
+      "path": "mybot/plugins/ai_cache.py",
+      "sha256": "28ec10bfc8dcd85ba88b8618f74ca36e5684988f578c09b461c1ddc188df9f19"
+    },
+    {
+      "path": "mybot/plugins/ai_chat.py",
+      "sha256": "9d1d583ff67df3c3f62676fda68cf698b101b9ae1892827f94707aa28be9e2e2"
+    },
+    {
+      "path": "mybot/plugins/backup.py",
+      "sha256": "5e8ddb6c1cd15d1731181a89d09f725a35a77a2042e0b05720b81c6ec1700a23"
+    },
+    {
+      "path": "mybot/plugins/blacklist.py",
+      "sha256": "188849b6261521e0a1d4649ce552b13fe096ab1bde88077f51ab2d04638a0344"
+    },
+    {
+      "path": "mybot/plugins/command_finder.py",
+      "sha256": "2c92efdcb204627581cbf8c3e7e826d9fd17c14db20b5316f971d8275f21bab9"
+    },
+    {
+      "path": "mybot/plugins/daily_greet.py",
+      "sha256": "b83bdcc9c51a7e5064c6d06d0ae5f0970efdca3ee85aaa95bf89714ef37cd26f"
+    },
+    {
+      "path": "mybot/plugins/data_diagnostics.py",
+      "sha256": "d10c76c80c969eec804ce55b385ea5a432701eba977efed82311f3cca0b9a154"
+    },
+    {
+      "path": "mybot/plugins/fortune.py",
+      "sha256": "945fd8444730c2011a60c059402dd0f19b845dd562ce5d09acea492820a0c13b"
+    },
+    {
+      "path": "mybot/plugins/fun.py",
+      "sha256": "c52c509ae599e3a16295d7a6df2e975e1f787d7e6c8ca96005dc0878de26fb06"
+    },
+    {
+      "path": "mybot/plugins/game_disabled.py",
+      "sha256": "fefaf90ce061676f84ee47f01e27ae46f668715568f5f99ba31c5811f3e22430"
+    },
+    {
+      "path": "mybot/plugins/gift.py",
+      "sha256": "2a20338ccef6058869b3ab72da6259f2c81fc5c81cd726e299deb8213a36b320"
+    },
+    {
+      "path": "mybot/plugins/group_admin_assistant.py",
+      "sha256": "5501a83677249aff030dd7537943084e71a5aa29dfbc10121a050cde19ecb043"
+    },
+    {
+      "path": "mybot/plugins/group_chat_logs.py",
+      "sha256": "bd6204a557b8473216ef1e90d079cfc337146b1640717617bd7b94d089772d75"
+    },
+    {
+      "path": "mybot/plugins/hello.py",
+      "sha256": "394942ba60afb0d4e6e324b7a87215346fecc7f04b805de2c876e48d948e812d"
+    },
+    {
+      "path": "mybot/plugins/help.py",
+      "sha256": "84670851a09f7cc7d816687a3497ccfce1f6b7966b000150c59e4cc20fa0cc2a"
+    },
+    {
+      "path": "mybot/plugins/image_library.py",
+      "sha256": "877f21fe9ad4af51af6509af8d3798b3b6393e1541438559c2d138572f5b0271"
+    },
+    {
+      "path": "mybot/plugins/love.py",
+      "sha256": "eb58885adad47d8560cd9fc383ca8b1e338984a72a2cbcfb1c0098bd8ab78945"
+    },
+    {
+      "path": "mybot/plugins/mini_commands.py",
+      "sha256": "ef9b13e567a9dbd9221ba9041aa995e59791b2b89b66a1474c6063126f1a09e0"
+    },
+    {
+      "path": "mybot/plugins/monthly_fame.py",
+      "sha256": "589fe12c685badc51cca74cfeeb8b7945646dd064177bc3fbd33dca56f5d0313"
+    },
+    {
+      "path": "mybot/plugins/my_scroll.py",
+      "sha256": "ce3239de114b22b65584a8f03531e9ba9e7e44b3ae809da1907fa4256f50e5b6"
+    },
+    {
+      "path": "mybot/plugins/poem.py",
+      "sha256": "4d79d6a9103f323fd98187889dac260c95d34db59e7f105aadadf945d6f4124d"
+    },
+    {
+      "path": "mybot/plugins/poetry_game.py",
+      "sha256": "bb01730a2d3b4f639ffc13c4f63645a02034f65527a0c141d9fd8c4301a32423"
+    },
+    {
+      "path": "mybot/plugins/poetry_society.py",
+      "sha256": "eb899392284c16680f8b93db67841a49c9f4d424fb666e66357dc2d355d76bf6"
+    },
+    {
+      "path": "mybot/plugins/points.py",
+      "sha256": "955870246faa61c065899cdaca1840d8027bc447d02ea4f44c770a3c86f617a2"
+    },
+    {
+      "path": "mybot/plugins/practical_tools.py",
+      "sha256": "05fc6f7cc5bb94bbef0b458380183507c9b2197e5db6de5f5c50b96465a63711"
+    },
+    {
+      "path": "mybot/plugins/premium_chat.py",
+      "sha256": "208d8a9aa94152474dacdf1d5198d80ca3574d20d640b8bb0c346e827304e66d"
+    },
+    {
+      "path": "mybot/plugins/profile_like.py",
+      "sha256": "076390266c440a97912e97d350414ba56b320633bdbe06918a98de55fbd749af"
+    },
+    {
+      "path": "mybot/plugins/quotes.py",
+      "sha256": "5d14341a9bb8e85a841047a8a137dd229d0b2c1434bbad820fa874309ea51432"
+    },
+    {
+      "path": "mybot/plugins/rate_limit.py",
+      "sha256": "f1fe27196ec5f10ca661b80b97ad0e9f92f3d51469382401cb5c64f85106d2c6"
+    },
+    {
+      "path": "mybot/plugins/riddle.py",
+      "sha256": "577becfcf27b7446c5ad345343698efb8f8d5640597bdc1e2d944b0265f4fc93"
+    },
+    {
+      "path": "mybot/plugins/roast_target.py",
+      "sha256": "6f1ad0376d427318ba397b90ae827d161cbced4e2f464e7f088a89bcd8b6de84"
+    },
+    {
+      "path": "mybot/plugins/taibai_tavern.py",
+      "sha256": "d4b3fa479bd11e053467380ba98703aed7e36f0b3bc9316853902f14be9f271c"
+    },
+    {
+      "path": "mybot/plugins/translate.py",
+      "sha256": "00ed210ce6699faa741cf5d41fcc96e50a9ba6fb977e0fbe371d700d62788cbb"
+    },
+    {
+      "path": "mybot/plugins/yoimiya.py",
+      "sha256": "22cfe55ccac8aa544a29dd973d53e3fcdec82e656f1a82e935457bee0d710c37"
+    },
+    {
+      "path": "mybot/plugins_disabled/__init__.py",
+      "sha256": "872cda0558d43ef32568e2f376cac1dcbe32aea5e9b80e7862813a98e50dad92"
+    },
+    {
+      "path": "mybot/plugins_disabled/blackjack.py",
+      "sha256": "6aa61e32e9e1d2dc5f65ed046a1cb2b4b8179386c121ed3a3ca9f4874cbcf47a"
+    },
+    {
+      "path": "mybot/plugins_disabled/dice.py",
+      "sha256": "88304a369fff9e97eb36b7ba4cd7e48e226745f1bd9925afb39bc91841b9d8f1"
+    },
+    {
+      "path": "mybot/plugins_disabled/race.py",
+      "sha256": "6e2faa5157e9baa3d540795b24a7dec3095ef2227d2f16e325eb6b37f7549304"
+    },
+    {
+      "path": "mybot/plugins_disabled/roulette.py",
+      "sha256": "3856516d637bb1583d79782749aebbb1770249855a828069a77b90347eb5836c"
+    },
+    {
+      "path": "mybot/plugins_disabled/scratch.py",
+      "sha256": "43849467be5d312efdeb4488fb282af5616f8dc4c581272aca3ff20f51f78053"
+    },
+    {
+      "path": "mybot/plugins_disabled/slot.py",
+      "sha256": "caa595b8ec1a392e77bc06b9aec7caeeb04422bac31dc85738b198c988e42554"
+    },
+    {
+      "path": "mybot/pyproject.toml",
+      "sha256": "56330d15e2086772756d3dbe04c1244b0184e7b3201427512f880b78d261be4f"
+    },
+    {
+      "path": "mybot/README.md",
+      "sha256": "911be6dabb1c861ccc001c4d8275de180cacafaa20031861a1f210c8d1e793b0"
+    },
+    {
+      "path": "mybot/tests/test_accounting.py",
+      "sha256": "e37dbfd22e55d2dcd194f701726e0a8692f47333080fab12a756a8b5c97c0260"
+    },
+    {
+      "path": "mybot/tests/test_admin_audit.py",
+      "sha256": "4fa271d12f5626f3c45aa862edab83f37c1f0df1408bd5f3167f7cf067c6d48e"
+    },
+    {
+      "path": "mybot/tests/test_admin_permissions.py",
+      "sha256": "e0e115e7880919c43713344bf83af482da1ee4661d0416b48e858427a8337862"
+    },
+    {
+      "path": "mybot/tests/test_ai_chat_history.py",
+      "sha256": "1e087732e2f0201ce6f359c8f2385231b381eb6f2647b52c7a74ddfad3318fa1"
+    },
+    {
+      "path": "mybot/tests/test_ai_chat_mentions.py",
+      "sha256": "e49f4cbdcd4c33be89a8b43821d61822ca4fef0e2baead4cd105e5a798b816fe"
+    },
+    {
+      "path": "mybot/tests/test_ai_context.py",
+      "sha256": "76fe366296ef014170046f5d19e9a9804c3187fc267f385e3a1d17dc68fb224d"
+    },
+    {
+      "path": "mybot/tests/test_ai_public_play_guides.py",
+      "sha256": "14b0e0cd5341f74f10d345523c15d289b41bf10f526de68d10915ca0907520fc"
+    },
+    {
+      "path": "mybot/tests/test_ai_readonly_tools.py",
+      "sha256": "cdd660a92205d20428837bce4986125428617bf67008b759fbfc656a87150df9"
+    },
+    {
+      "path": "mybot/tests/test_backup_retention.py",
+      "sha256": "388f5b34ae121f338d073a546a07ee8bce08c952eabe44646a00d85ade751e4b"
+    },
+    {
+      "path": "mybot/tests/test_blacklist_reform.py",
+      "sha256": "0481ab5b75c66642e54a62006ac8b6129230c0b7badfc51e693986f9a4f93bd5"
+    },
+    {
+      "path": "mybot/tests/test_command_finder.py",
+      "sha256": "5c783ec3b856b065d11d673ddcdfb5994aa3eec8c5d6e99687e3cce46fb6005a"
+    },
+    {
+      "path": "mybot/tests/test_core_plugin_boundaries.py",
+      "sha256": "fa84ab1ffe7b0fc45a0d4c495f6ada74e273b25705cd64cbf8111fc30abc2f80"
+    },
+    {
+      "path": "mybot/tests/test_data_diagnostics.py",
+      "sha256": "228643781ffc2efa2268c90c5b518f4ad0346fc786ad1ff18312f5e1b39677d1"
+    },
+    {
+      "path": "mybot/tests/test_data_health.py",
+      "sha256": "669ad5b0df15c6f75188a04428a93cc5e493cef6460c23acd4a91ec45565ee03"
+    },
+    {
+      "path": "mybot/tests/test_fortune_overhaul.py",
+      "sha256": "c750d0b3307a593d175f7fd470c2bb71d7ad3f7b8c6f702de6b9bbc687a8485e"
+    },
+    {
+      "path": "mybot/tests/test_fortune_scoring.py",
+      "sha256": "78a6c5f272ebef02ebab1fae4cfc5edd977001e192bce73e61f318c156a0c669"
+    },
+    {
+      "path": "mybot/tests/test_fun_paid_interactions.py",
+      "sha256": "4d59b88b176bb027bd29f12498613e07b2f4017d92c2baf582830e23a7ac365a"
+    },
+    {
+      "path": "mybot/tests/test_gift_inventory.py",
+      "sha256": "f250a76a14f6c32f28f06ab374d25ac1ab2b100312f851dd863ca9e2cee88abe"
+    },
+    {
+      "path": "mybot/tests/test_gift_shop.py",
+      "sha256": "3ebfa32538dcfdd8e529320f10102064579e36ecb340460c6e16c960eac37103"
+    },
+    {
+      "path": "mybot/tests/test_group_admin_assistant.py",
+      "sha256": "c7a9f9e93d49de4094a5e83dc64ad7adf107f5abd5d12b423fd7e58f55171c58"
+    },
+    {
+      "path": "mybot/tests/test_group_chat_logs.py",
+      "sha256": "429a344f15011101f50853a2adf0df201259a8e2be9cf7e1221dc6bce309e865"
+    },
+    {
+      "path": "mybot/tests/test_group_feature_admin.py",
+      "sha256": "ef3ef02c8d66acb8608463ccec836bad46ec3c8d07d2c5035dee4911215d15ec"
+    },
+    {
+      "path": "mybot/tests/test_group_management.py",
+      "sha256": "ccb9b4a19ee3c5c7f9548a85951500f6822db9915b5cb818d882c7e983058566"
+    },
+    {
+      "path": "mybot/tests/test_help_category_hierarchy.py",
+      "sha256": "7f40a269000b3d3b57f074a713439f7ab7ccacb16715757717ec7bfbeeb6ed50"
+    },
+    {
+      "path": "mybot/tests/test_hidden_slot_title.py",
+      "sha256": "513af3c6f370d5ab550bfd0eedfc122432079b806a73c1589fc5ea6aeccd400f"
+    },
+    {
+      "path": "mybot/tests/test_image_library.py",
+      "sha256": "0f0b21573f3ed6012732e814d179fbb812566ee114fa9c44a0794d66b741f87a"
+    },
+    {
+      "path": "mybot/tests/test_json_store_safety.py",
+      "sha256": "27e39616fbb27df69754982c5a32506863125e8bd043e5f715506c919ac1f0df"
+    },
+    {
+      "path": "mybot/tests/test_legacy_game_names.py",
+      "sha256": "9ca583f66fe81902ed794665122ce093bd70f34a14bd15dcbfc2597bcac4fe05"
+    },
+    {
+      "path": "mybot/tests/test_legacy_game_schedule.py",
+      "sha256": "1aa47bf899ecf67be74f274a0e7b8b5be0204aa721d63008c625fcf85334779e"
+    },
+    {
+      "path": "mybot/tests/test_love_interactions.py",
+      "sha256": "e5ca5c1008860f21e5d1110d340d1e06be0ed82abd22718ecd274b1c6d4ab8a7"
+    },
+    {
+      "path": "mybot/tests/test_makeup_restore_streak.py",
+      "sha256": "85155d0efdbf8db24310abbb48f41a8dd73747bba5572944f83f830bb19a9781"
+    },
+    {
+      "path": "mybot/tests/test_mini_commands.py",
+      "sha256": "9ec0a205821e03ebc2539ece785d8cdac57aa911d09b1ff0ebaa0333c1e3379d"
+    },
+    {
+      "path": "mybot/tests/test_monthly_fame_gifts.py",
+      "sha256": "5918a00e37463ab5a5bff790720f2c1218634cc6d55837ab09fd86d09750c607"
+    },
+    {
+      "path": "mybot/tests/test_observability.py",
+      "sha256": "719071c6a7ca589f4b848a7e2773163add40e4bc164ede6295ce1b23bf5c59fa"
+    },
+    {
+      "path": "mybot/tests/test_onebot_capabilities.py",
+      "sha256": "6a4cf2a8838f286132820fa5d1f9c30945db015bf6ed153d1d9c98b3f037f26f"
+    },
+    {
+      "path": "mybot/tests/test_paid_game_recovery.py",
+      "sha256": "21ee52fcd5aaa358c09353580f56d69ba6b169fcc0eef7c92391f10d267cfbcb"
+    },
+    {
+      "path": "mybot/tests/test_paid_rounds.py",
+      "sha256": "84e454940e72ab18f740792bb2bda489f482f116a5b9c1b3b04406cb1cf5bb2c"
+    },
+    {
+      "path": "mybot/tests/test_persona_consistency.py",
+      "sha256": "e9c3b40d74a404f12c871f61358e93c6143768f2d21beffd1a6f92fce2aa3582"
+    },
+    {
+      "path": "mybot/tests/test_personal_scroll.py",
+      "sha256": "2dd82b5f85f41c56f3f9a5bb327698b642b6b187aa43d3a87b7cef72ed6be4a2"
+    },
+    {
+      "path": "mybot/tests/test_plugin_loading.py",
+      "sha256": "a076d8bd2eb88ba53d816d4010e2d06899f0afe429dd5b243d615d1f41480ec7"
+    },
+    {
+      "path": "mybot/tests/test_plugin_metadata.py",
+      "sha256": "d5cf219fe6442681296ee361a75552ff1d0691144be38942a0947ea25778181f"
+    },
+    {
+      "path": "mybot/tests/test_poetry_society.py",
+      "sha256": "11f1edc13f42bb8cbc63840f1bfde0980afb7e4acbeb450bc7c1d18b2e4f0615"
+    },
+    {
+      "path": "mybot/tests/test_points_low_income.py",
+      "sha256": "f2b5dc46602bc9a3ac04577950ff07c150cb8575c79f67bc3f1c2e0a138c6af3"
+    },
+    {
+      "path": "mybot/tests/test_practical_tools.py",
+      "sha256": "55d39d1c4cdddf55b41e58cc5dd2c5c72dcf0d7b0be62ca59bec71ac0d107956"
+    },
+    {
+      "path": "mybot/tests/test_profile_like.py",
+      "sha256": "c65bcb4ddff7db3cbd6ddf4567034d8f694cefb53c8fbebcdeb3fd6b4f186670"
+    },
+    {
+      "path": "mybot/tests/test_qq_dice_settlement.py",
+      "sha256": "dec078eb40df30b1cb0b5f2c48983a5054af994b506908f0705a1310740a7751"
+    },
+    {
+      "path": "mybot/tests/test_quotes_search.py",
+      "sha256": "8d369572d1b1e6fb9a95ff4f542bddd0f02c56e82e1a16fcfcdfa9dd762a560d"
+    },
+    {
+      "path": "mybot/tests/test_race_simulation.py",
+      "sha256": "69831e273ca439dd6a8fe87ed778d987b44fb062f944a15194ac100f91e1636b"
+    },
+    {
+      "path": "mybot/tests/test_scratch_game.py",
+      "sha256": "791b3b550770cb28619dab1ee01f945561204eab32359b2c26111fa9d06f85c7"
+    },
+    {
+      "path": "mybot/tests/test_startup_preflight.py",
+      "sha256": "f0879143d0920dbc7476b5dbb539ba624c5d09e33298d9f115ab274b8df6b10a"
+    },
+    {
+      "path": "mybot/tests/test_system_optimization.py",
+      "sha256": "dd10f20baa16a422e364a2ed4b1ce3f3c1c998d4f4fb2dcfcb4bb55d1e9086e4"
+    },
+    {
+      "path": "mybot/tests/test_taibai_tavern.py",
+      "sha256": "110c5cc0d398bda71d4b28ea4edabe5dd47237ef060abe99b9d5b13ba2bc998f"
+    },
+    {
+      "path": "mybot/tests/test_tavern_rps.py",
+      "sha256": "fa4d15bbfcdd56dee48c76d8a59d9a4cad2a795ee0e747f2f9ecd09a3a3e5fba"
+    },
+    {
+      "path": "mybot/tests/test_translation.py",
+      "sha256": "02a5f0e28d4cebb3037aff8e3c7817bccc5906d30337ff1e3aa0976e45163239"
+    },
+    {
+      "path": "mybot/tests/test_usage_policy.py",
+      "sha256": "acccf321f5a696581fc647e403dd477d1d86f943b6c749a1c39d80370a81b5b7"
+    },
+    {
+      "path": "mybot/tests/test_version.py",
+      "sha256": "c60fb26361234b4d353cd7e26e25de5776b2c9f6feaddacbaef5fcc91bae6101"
+    },
+    {
+      "path": "mybot/tests/test_yoimiya_rename.py",
+      "sha256": "29e1e50a7a1f77feb7bb46e5954ba93a53aa41e0f4ead5fba04278f5919a570a"
+    },
+    {
+      "path": "mybot/uv.lock",
+      "sha256": "da40b5a77c7bfeeaf9b6ec4f8fdbe259f5d73d0ecab8f586c0a6790a8aada55a"
+    }
+  ]
+}

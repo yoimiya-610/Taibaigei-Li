@@ -5,6 +5,7 @@ from calendar import monthrange
 from pathlib import Path
 
 from mybot.common.charm import get_charm
+from mybot.common.ai_public_play_guides import PublicPlayGuideEntry
 from mybot.common.interaction_stats import get_auto_reply_trigger_count
 from mybot.common.json_store import load_json, mutate_json
 from mybot.common.streak import get_current_streak
@@ -116,6 +117,21 @@ POINT_TITLE_IDS = {
     for achievement in ACHIEVEMENTS
     if achievement.category == "积分"
 }
+
+PUBLIC_PLAY_GUIDES = (
+    PublicPlayGuideEntry(
+        key="titles",
+        keywords=("称号", "成就", "名号", "佩戴称号", "称号说明", "卸下称号"),
+        intents=("怎么查看", "查看", "查询", "怎么佩戴", "怎么戴", "说明", "规则", "命令", "怎么获得"),
+        public_explanation=(
+            "称号按群记录，/称号 会展示已入册和仍可追的公开称号；"
+            "/称号说明 称号名 可看单个称号的来历、评级和当前进度；"
+            "/佩戴称号 称号名 可把已解锁称号挂上，/卸下称号 可收起手动佩戴。"
+            "未解锁的隐藏名号不会提前列出，等达成后才会入册。"
+        ),
+        related_commands=("/称号", "/称号说明 称号名", "/佩戴称号 称号名", "/卸下称号"),
+    ),
+)
 
 
 def _title_key(group_id: str, user_id: str) -> str:
@@ -547,7 +563,11 @@ def sync_user_titles(user_id: str, group_id: str, points_info: dict | None = Non
             "new_ids": _sort_title_ids(achieved_ids - old_unlocked),
         }
 
-    return mutate_json(TITLE_DATA_FILE, DEFAULT_TITLE_DATA, mutator)
+    result = mutate_json(TITLE_DATA_FILE, DEFAULT_TITLE_DATA, mutator)
+    if result["new_ids"]:
+        from mybot.common.group_management import queue_card_sync
+        queue_card_sync(group_id, user_id)
+    return result
 
 
 def _auto_title_id(unlocked_ids: list[str]) -> str:
@@ -622,6 +642,8 @@ def equip_title(user_id: str, group_id: str, identifier: str, points_info: dict 
         record["unlocked"] = _sort_title_ids(set(record.get("unlocked", [])) | {"default", title_id})
 
     mutate_json(TITLE_DATA_FILE, DEFAULT_TITLE_DATA, mutator)
+    from mybot.common.group_management import queue_card_sync
+    queue_card_sync(group_id, user_id)
     return TITLE_BY_ID[title_id]
 
 
@@ -636,6 +658,8 @@ def clear_equipped_title(user_id: str, group_id: str, points_info: dict | None =
         record["unlocked"] = _sort_title_ids(set(record.get("unlocked", [])) | {"default"})
 
     mutate_json(TITLE_DATA_FILE, DEFAULT_TITLE_DATA, mutator)
+    from mybot.common.group_management import queue_card_sync
+    queue_card_sync(group_id, user_id)
 
 
 def grant_title(user_id: str, group_id: str, title_id: str) -> TitleAchievement | None:
@@ -664,6 +688,8 @@ def grant_title(user_id: str, group_id: str, title_id: str) -> TitleAchievement 
         record["updated_at"] = now_text
 
     mutate_json(TITLE_DATA_FILE, DEFAULT_TITLE_DATA, mutator)
+    from mybot.common.group_management import queue_card_sync
+    queue_card_sync(group_id, user_id)
     return achievement
 
 

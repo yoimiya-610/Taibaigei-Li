@@ -1,3 +1,16 @@
+from mybot.common.plugin_metadata import declare_plugin
+
+PLUGIN_META = declare_plugin(
+    module_name=__name__,
+    feature_key="hello",
+    name="调试命令",
+    default_enabled=True,
+    scope="system",
+    permission_level=None,
+    privacy_level="internal",
+    backup_policy="none",
+)
+
 from nonebot import on_command
 from nonebot.adapters.onebot.v11 import MessageEvent
 
